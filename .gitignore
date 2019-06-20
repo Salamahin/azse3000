@@ -1,3 +1,5 @@
 .idea
 target
 azse3000-build
+
+secrets.conf

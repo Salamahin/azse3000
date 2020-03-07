@@ -30,7 +30,7 @@ class ZioPathRefinery[E](knownHosts: Map[String, String]) extends Refine[RIO[E, 
   }
 }
 
-class ZioEncryptedSecretsRepo[E](knownSecrets: Map[String, Map[String, String]]) extends CredsRepo[RIO[E, *]] {
+class ZioSecretsRepo[E](knownSecrets: Map[String, Map[String, String]]) extends CredsRepo[RIO[E, *]] {
   override def creds(acc: Account, cont: ContainerName): RIO[E, Option[Secret]] = UIO {
     for {
       accSecrets <- knownSecrets.get(acc.name)
@@ -84,7 +84,7 @@ class ZioAzureUri[E] extends EndpointUri[RIO[E, *], CloudBlockBlob, CloudBlobCon
 
 object Main extends zio.App {
 
-  def loadConf() = {
+  private def loadConf() = {
     import pureconfig._
     import pureconfig.generic.auto._
 
@@ -95,24 +95,24 @@ object Main extends zio.App {
       .loadOrThrow[Config]
   }
 
-  def formatOperationReport(description: OperationDescription, stats: OperationResult) = {
+  private def formatOperationReport(description: OperationDescription, stats: OperationResult) = {
     def formatFailures(failures: Seq[FileOperationFailed]) = {
       if (failures.isEmpty) "none"
       else failures.map(f => s"  * ${f.file.path}: ${f.th.getCause}").mkString("\n")
     }
 
     s"""${description.description}
-       |Successfully processed ${stats.succeed}
+       |Successfully processed ${stats.succeed} items
        |Failures: ${formatFailures(stats.errors)}
        |""".stripMargin
   }
 
-  def formatIssues(issues: Seq[Issue with Aggregate]) = {
+  private def formatIssues(issues: Seq[Issue with Aggregate]) = {
     issues
       .map {
         case InvalidCommand(msg)   => s"  * Failed to parse an expression: $msg"
-        case MalformedPath(path)   => s"  * Format of $path is unexpected"
-        case NoSuchContainer(path) => s"  * Failed to find a container of $path"
+        case MalformedPath(path)   => s"  * Format of path ${path.path} is unexpected"
+        case NoSuchContainer(path) => s"  * Failed to find a container of path ${path.path}"
       }
       .mkString("\n")
   }
@@ -120,19 +120,18 @@ object Main extends zio.App {
   override def run(args: List[String]): ZIO[zio.ZEnv, Nothing, Int] = {
     implicit val conf = loadConf()
 
-    import nequi.zio.logger._
     import zio.interop.catz.core._
 
     implicit val prompt: Prompt[RIO[Console, *]]                                             = new ConsoleZioPrompt(conf.knownSecrets)
     implicit val parse: Parse[RIO[Console, *]]                                               = new ZioParse
-    implicit val credsVault: CredsRepo[RIO[Console, *]]                                      = new ZioEncryptedSecretsRepo(conf.knownSecrets)
+    implicit val credsVault: CredsRepo[RIO[Console, *]]                                      = new ZioSecretsRepo(conf.knownSecrets)
     implicit val pathRefine: Refine[RIO[Console, *]]                                         = new ZioPathRefinery(conf.knownHosts)
     implicit val endpoints: EndpointUri[RIO[Console, *], CloudBlockBlob, CloudBlobContainer] = new ZioAzureUri
     implicit val fs: FileSystem[RIO[Console, *], CloudBlockBlob, CloudBlobContainer] = new ZioAzureFileSystem(
       conf.batchSize
     )
 
-    def attempt: ZIO[Logger with Console, Throwable, Unit] = {
+    def attempt: ZIO[Console, Throwable, Unit] = {
       (for {
         results <- new Program[RIO[Console, *], CloudBlockBlob, CloudBlobContainer].run.absolve
 
@@ -142,22 +141,15 @@ object Main extends zio.App {
           }
           .mkString("\n")
 
-        _ <- info(s"Execution summary:\n$report")
+        _ <- putStrLn(s"Execution summary:\n$report")
       } yield ()).catchSome {
-        case Failure(issues) => error(s"Failed to interpret:\n${formatIssues(issues)}") *> attempt
+        case Failure(issues) => putStrLn(s"Failed to interpret:\n${formatIssues(issues)}\n") *> attempt
       }
     }
 
     attempt
       .catchAllCause(
         failure => ZIO.effect(System.err.println(failure.prettyPrint)) *> ZIO.halt(failure)
-      )
-      .provideSome[Console](
-        env =>
-          new Logger with Console {
-            override val logger: Logger.Service[Any]   = Slf4jLogger.create.logger
-            override val console: Console.Service[Any] = env.console
-          }
       )
       .fold(_ => 1, _ => 0)
   }

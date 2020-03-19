@@ -1,7 +1,7 @@
 package com.aswatson.aswrdm.azse3000.expression
 
 import cats.Id
-import cats.kernel.{Monoid, Semigroup}
+import cats.kernel.Semigroup
 import com.aswatson.aswrdm.azse3000.shared._
 import org.scalatest.{FunSuite, Matchers}
 
@@ -9,30 +9,9 @@ class InputParserTest extends FunSuite with Matchers {
   import InputParserTest._
 
   private val primitives = Seq(
-    Command("cp a1 a2 a3 b") ->
-      And(
-        And(
-          Copy(Path("a1"), Path("b")),
-          Copy(Path("a2"), Path("b"))
-        ),
-        Copy(Path("a3"), Path("b"))
-      ),
-    Command("mv a1 a2 a3 b") ->
-      And(
-        And(
-          Move(Path("a1"), Path("b")),
-          Move(Path("a2"), Path("b"))
-        ),
-        Move(Path("a3"), Path("b"))
-      ),
-    Command("rm a1 a2 a3") ->
-      And(
-        And(
-          Remove(Path("a1")),
-          Remove(Path("a2"))
-        ),
-        Remove(Path("a3"))
-      )
+    Command("cp a1 a2 a3 b") -> Copy(Seq("a1", "a2", "a3").map(Path), Path("b")),
+    Command("mv a1 a2 a3 b") -> Move(Seq("a1", "a2", "a3").map(Path), Path("b")),
+    Command("rm a1 a2 a3")   -> Remove(Seq("a1", "a2", "a3").map(Path))
   )
 
   primitives.foreach {
@@ -51,15 +30,9 @@ class InputParserTest extends FunSuite with Matchers {
     InputParser(expr.get).map(x => ActionInterpret.interpret(x)) match {
       case Right(c: Vector[String]) =>
         c should contain inOrderOnly (
-          "cp a1 to b",
-          "cp a2 to b",
-          "cp a3 to b",
-          "mv a1 to b",
-          "mv a2 to b",
-          "mv a3 to b",
-          "rm a1",
-          "rm a2",
-          "rm a3"
+          "cp a1, a2, a3 to b",
+          "mv a1, a2, a3 to b",
+          "rm a1, a2, a3"
         )
       case Left(v) => fail(s"Failed to parse tree: $v")
     }
@@ -68,9 +41,9 @@ class InputParserTest extends FunSuite with Matchers {
 
 object InputParserTest {
   implicit val print: ActionInterpret[Id, String] = {
-    case Copy(from, to) => s"cp ${from.path} to ${to.path}"
-    case Move(from, to) => s"mv ${from.path} to ${to.path}"
-    case Remove(sources)   => s"rm ${sources.path}"
+    case Copy(sources, to) => s"cp ${sources.map(_.path).mkString(", ")} to ${to.path}"
+    case Move(sources, to) => s"mv ${sources.map(_.path).mkString(", ")} to ${to.path}"
+    case Remove(sources)   => s"rm ${sources.map(_.path).mkString(", ")}"
   }
 
   implicit val cmdSemi: Semigroup[Command] = new Semigroup[Command] {

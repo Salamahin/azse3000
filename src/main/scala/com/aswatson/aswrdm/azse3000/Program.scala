@@ -13,6 +13,7 @@ class Program[F[_]: Monad: Applicative, T, K](
   parse: Parse[F],
   refine: Refine[F],
   endpoint: EndpointUri[F, T, K],
+  par: Parallel[F],
   fs: FileSystem[F, T, K]
 ) {
 
@@ -30,7 +31,7 @@ class Program[F[_]: Monad: Applicative, T, K](
       (_, _, searchPrefix) <- EitherT(endpoint.decompose(path)).leftWiden[Issue with Aggregate]
 
       results <- EitherT.right[Issue with Aggregate](for {
-                  actionResults     <- fs.foreachFile(container, searchPrefix) { fs.traverse(_)(action) }
+                  actionResults     <- fs.foreachFile(container, searchPrefix) { par.traverse(_)(action) }
                   (failed, succeed) = actionResults.toVector.separate
                 } yield OperationResult(succeed.size, failed))
 
@@ -71,19 +72,19 @@ class Program[F[_]: Monad: Applicative, T, K](
 
       case Copy(from, to) =>
         for {
-          refinedFrom <- refine.path(from)
+          refinedFrom <- from.toVector.traverse(x => refine.path(x))
           refinedTo   <- refine.path(to)
         } yield Copy(refinedFrom, refinedTo)
 
       case Move(from, to) =>
         for {
-          refinedFrom <- refine.path(from)
+          refinedFrom <- from.toVector.traverse(x => refine.path(x))
           refinedTo   <- refine.path(to)
         } yield Move(refinedFrom, refinedTo)
 
       case Remove(from) =>
         for {
-          refinedSources <- refine.path(from)
+          refinedSources <- from.toVector.traverse(x => refine.path(x))
         } yield Remove(refinedSources)
     }
   }
@@ -135,9 +136,9 @@ class Program[F[_]: Monad: Applicative, T, K](
     val collectPathInterpret = new ActionInterpret[F, Seq[Path]] {
       override def run(term: Action): F[Seq[Path]] =
         term match {
-          case Copy(from, to) => Monad[F].pure(Seq(from, to))
-          case Move(from, to) => Monad[F].pure(Seq(from, to))
-          case Remove(from)   => Monad[F].pure(Seq(from))
+          case Copy(from, to) => Monad[F].pure(from :+ to)
+          case Move(from, to) => Monad[F].pure(from :+ to)
+          case Remove(from)   => Monad[F].pure(from)
         }
     }
 
@@ -148,29 +149,32 @@ class Program[F[_]: Monad: Applicative, T, K](
   }
 
   private def runActions(expression: Expression, creds: CREDS) = {
-    val action = new ActionInterpret[F, (OperationDescription, Either[Issue with Aggregate, OperationResult])] {
+    val action = new ActionInterpret[F, Seq[(OperationDescription, Either[Issue with Aggregate, OperationResult])]] {
       override def run(term: Action) = term match {
 
-        case Copy(from, to) =>
+        case Copy(from, to) => par.traverse(from) { f =>
           for {
-            ops <- copyFiles(creds, from, to)
-          } yield OperationDescription(s"Copy from ${from.path} to ${to.path}") -> ops
+            ops <- copyFiles(creds, f, to)
+          } yield OperationDescription(s"Copy from ${f.path} to ${to.path}") -> ops
+        }
 
-        case Move(from, to) =>
+        case Move(from, to) => par.traverse(from) { f =>
           for {
-            ops <- moveFiles(creds, from, to)
-          } yield OperationDescription(s"Move from ${from.path} to ${to.path}") -> ops
+            ops <- moveFiles(creds, f, to)
+          } yield OperationDescription(s"Move from ${f.path} to ${to.path}") -> ops
+        }
 
-        case Remove(from) =>
+        case Remove(from) => par.traverse(from) { f =>
           for {
-            ops <- removeFiles(creds, from)
-          } yield OperationDescription(s"Remove from ${from.path}") -> ops
+            ops <- removeFiles(creds, f)
+          } yield OperationDescription(s"Remove from ${f.path}") -> ops
+        }
       }
     }
 
     for {
       interpreted <- ActionInterpret.interpret(expression)(Applicative[F], action)
-      (failures, suceeds) = interpreted.map {
+      (failures, suceeds) = interpreted.flatten.map {
         case (descr, opsResults) => opsResults.map(descr -> _)
       }.separate
     } yield if (failures.nonEmpty) Left(Failure(failures)) else Right(suceeds.toMap)

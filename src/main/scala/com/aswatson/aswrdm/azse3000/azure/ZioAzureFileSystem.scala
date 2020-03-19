@@ -46,9 +46,6 @@ class ZioAzureFileSystem[E](batchSize: Int) extends FileSystem[RIO[E, *], CloudB
     } yield processedBlobs
   }
 
-  override def traverse[U](files: Seq[CloudBlockBlob])(action: CloudBlockBlob => RIO[E, U]): RIO[E, Seq[U]] =
-    RIO.traverseParN(batchSize)(files)(action)
-
   override def copyContent(file: CloudBlockBlob, to: CloudBlockBlob): Task[Either[FileOperationFailed, Unit]] = {
     import cats.syntax.either._
 

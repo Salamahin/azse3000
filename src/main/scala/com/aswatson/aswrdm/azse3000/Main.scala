@@ -24,6 +24,11 @@ class ConsoleZioPrompt(knownSecrets: Map[String, Map[String, String]]) extends P
     } yield Secret(token)
 }
 
+class ZioParallel[E](parallelism: Int) extends Parallel[RIO[E, *]] {
+  override def traverse[T, U](items: Seq[T])(action: T => RIO[E, U]): RIO[E, Seq[U]] =
+    ZIO.traverseParN(parallelism)(items)(action)
+}
+
 class ZioPathRefinery[E](knownHosts: Map[String, String]) extends Refine[RIO[E, *]] {
   override def path(path: Path): RIO[E, Path] = UIO {
     ConfigurationBasedPathRefinery.refine(knownHosts)(path)
@@ -122,13 +127,14 @@ object Main extends zio.App {
 
     import zio.interop.catz.core._
 
+    implicit val par: Parallel[RIO[Console, *]]                                              = new ZioParallel(conf.parallelism)
     implicit val prompt: Prompt[RIO[Console, *]]                                             = new ConsoleZioPrompt(conf.knownSecrets)
     implicit val parse: Parse[RIO[Console, *]]                                               = new ZioParse
     implicit val credsVault: CredsRepo[RIO[Console, *]]                                      = new ZioSecretsRepo(conf.knownSecrets)
     implicit val pathRefine: Refine[RIO[Console, *]]                                         = new ZioPathRefinery(conf.knownHosts)
     implicit val endpoints: EndpointUri[RIO[Console, *], CloudBlockBlob, CloudBlobContainer] = new ZioAzureUri
     implicit val fs: FileSystem[RIO[Console, *], CloudBlockBlob, CloudBlobContainer] = new ZioAzureFileSystem(
-      conf.batchSize
+      conf.parallelism
     )
 
     def attempt: ZIO[Console, Throwable, Unit] = {

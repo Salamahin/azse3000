@@ -30,12 +30,14 @@ trait EndpointUri[F[_], T, K] {
   def findContainer(secret: Secret, excessPath: Path): F[Either[NoSuchContainer, K]]
 }
 
+trait Parallel[F[_]] {
+  def traverse[T, U](items: Seq[T])(action: T => F[U]): F[Seq[U]]
+}
+
 trait FileSystem[F[_], T, K] {
   def copyContent(file: T, to: T): F[Either[FileOperationFailed, Unit]]
 
   def remove(file: T): F[Either[FileOperationFailed, Unit]]
 
   def foreachFile[U](container: K, prefix: Path)(action: Seq[T] => F[Seq[U]]): F[Seq[U]]
-
-  def traverse[U](files: Seq[T])(action: T => F[U]): F[Seq[U]] //todo that looks like traverse
 }

@@ -20,9 +20,9 @@ sealed trait Expression
 sealed trait Action
 
 final case class And(left: Expression, right: Expression) extends Expression
-final case class Copy(from: Path, to: Path)               extends Expression with Action
-final case class Move(from: Path, to: Path)               extends Expression with Action
-final case class Remove(from: Path)                       extends Expression with Action
+final case class Copy(from: Seq[Path], to: Path)          extends Expression with Action
+final case class Move(from: Seq[Path], to: Path)          extends Expression with Action
+final case class Remove(from: Seq[Path])                  extends Expression with Action
 
 final case class FileOperationFailed(file: Path, th: Throwable)
 final case class OperationResult(succeed: Long, errors: Vector[FileOperationFailed])

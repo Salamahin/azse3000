@@ -19,7 +19,7 @@ object InputParser extends RegexParsers with PackratParsers {
       val from  = paths.init
       val to    = paths.last
 
-      from.map(Copy(_, to)).reduce(And)
+     Copy(from, to)
   }
 
   private def mv: Parser[Expression] = ("mv" ~> path ~ rep1(path)) ^^ {
@@ -28,10 +28,10 @@ object InputParser extends RegexParsers with PackratParsers {
       val from  = paths.init
       val to    = paths.last
 
-      from.map(Move(_, to)).reduce(And)
+      Move(from, to)
   }
 
-  private def rm: Parser[Expression] = ("rm" ~> rep1(path)) ^^ (ps => ps.map(Remove).reduce(And))
+  private def rm: Parser[Expression] = ("rm" ~> rep1(path)) ^^ (ps => Remove(ps))
 
   private lazy val expr: PackratParser[Expression] = (cp | mv | rm) ~ rep("&&" ~> expr) ^^ {
     case e1 ~ es =>

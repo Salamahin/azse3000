@@ -12,8 +12,8 @@ trait Parse[F[_]] {
   def toExpression(prompted: Command): F[Either[InvalidCommand, Expression]]
 }
 
-trait Refine[F[_]] {
-  def path(path: Path): F[Path]
+trait Preprocess[F[_]] {
+  def rebuild(command: Command): F[Command]
 }
 
 trait CredsRepo[F[_]] {

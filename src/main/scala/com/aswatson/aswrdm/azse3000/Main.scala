@@ -57,9 +57,9 @@ class ZioParallel[E](parallelism: Int) extends Parallel[RIO[E, *]] {
     ZIO.traverseParN(parallelism)(items)(action)
 }
 
-class ZioPathRefinery[E](knownHosts: Map[String, String]) extends Refine[RIO[E, *]] {
-  override def path(path: Path): RIO[E, Path] = UIO {
-    ConfigurationBasedPathRefinery.refine(knownHosts)(path)
+class ZioPathPreprocessor[E](knownHosts: Map[String, String]) extends Preprocess[RIO[E, *]] {
+  override def rebuild(command: Command): RIO[E, Command] = UIO {
+    ConfigurationBasedPathRefinery.refinePaths(knownHosts)(command)
   }
 }
 
@@ -163,7 +163,7 @@ object Main extends zio.App {
     implicit val prompt: Prompt[RIO[ENV, *]]                                             = new ConsoleZioPrompt(conf.knownSecrets)
     implicit val parse: Parse[RIO[ENV, *]]                                               = new ZioParse
     implicit val credsVault: CredsRepo[RIO[ENV, *]]                                      = new ZioSecretsRepo(conf.knownSecrets)
-    implicit val pathRefine: Refine[RIO[ENV, *]]                                         = new ZioPathRefinery(conf.knownHosts)
+    implicit val pathRefine: Preprocess[RIO[ENV, *]]                                         = new ZioPathPreprocessor(conf.knownHosts)
     implicit val endpoints: EndpointUri[RIO[ENV, *], CloudBlockBlob, CloudBlobContainer] = new ZioAzureUri
     implicit val fs: FileSystem[RIO[ENV, *], CloudBlockBlob, CloudBlobContainer] = new ZioAzureFileSystem(
       conf.parallelism

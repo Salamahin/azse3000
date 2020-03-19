@@ -11,7 +11,7 @@ class Program[F[_]: Monad: Applicative, T, K](
   prompt: Prompt[F],
   credsRepo: CredsRepo[F],
   parse: Parse[F],
-  refine: Refine[F],
+  preproc: Preprocess[F],
   endpoint: EndpointUri[F, T, K],
   par: Parallel[F],
   fs: FileSystem[F, T, K],
@@ -22,7 +22,6 @@ class Program[F[_]: Monad: Applicative, T, K](
   import cats.instances.vector._
   import cats.syntax.alternative._
   import cats.syntax.bifunctor._
-  import cats.syntax.flatMap._
   import cats.syntax.functor._
   import cats.syntax.traverse._
 
@@ -67,32 +66,32 @@ class Program[F[_]: Monad: Applicative, T, K](
         } yield result
     )
 
-  private def refinePaths(expr: Expression): F[Expression] = {
-    expr match {
-      case And(left, right) =>
-        for {
-          refinedLeft  <- refinePaths(left)
-          refinedRight <- refinePaths(right)
-        } yield And(refinedLeft, refinedRight)
-
-      case Copy(from, to) =>
-        for {
-          refinedFrom <- from.toVector.traverse(x => refine.path(x))
-          refinedTo   <- refine.path(to)
-        } yield Copy(refinedFrom, refinedTo)
-
-      case Move(from, to) =>
-        for {
-          refinedFrom <- from.toVector.traverse(x => refine.path(x))
-          refinedTo   <- refine.path(to)
-        } yield Move(refinedFrom, refinedTo)
-
-      case Remove(from) =>
-        for {
-          refinedSources <- from.toVector.traverse(x => refine.path(x))
-        } yield Remove(refinedSources)
-    }
-  }
+//  private def refinePaths(expr: Expression): F[Expression] = {
+//    expr match {
+//      case And(left, right) =>
+//        for {
+//          refinedLeft  <- refinePaths(left)
+//          refinedRight <- refinePaths(right)
+//        } yield And(refinedLeft, refinedRight)
+//
+//      case Copy(from, to) =>
+//        for {
+//          refinedFrom <- from.toVector.traverse(x => refine.preprocess(x))
+//          refinedTo   <- refine.preprocess(to)
+//        } yield Copy(refinedFrom, refinedTo)
+//
+//      case Move(from, to) =>
+//        for {
+//          refinedFrom <- from.toVector.traverse(x => refine.preprocess(x))
+//          refinedTo   <- refine.preprocess(to)
+//        } yield Move(refinedFrom, refinedTo)
+//
+//      case Remove(from) =>
+//        for {
+//          refinedSources <- from.toVector.traverse(x => refine.preprocess(x))
+//        } yield Remove(refinedSources)
+//    }
+//  }
 
   private def getCreds(tree: Expression) = {
 
@@ -193,11 +192,11 @@ class Program[F[_]: Monad: Applicative, T, K](
 
   def run = {
     (for {
-      command              <- EitherT.right[Failure](prompt.command)
-      expression           <- EitherT(parse.toExpression(command)).leftMap(x => Failure(Seq(x)))
-      exprWithPathsRefined <- EitherT.right[Failure](refinePaths(expression))
-      creds                <- EitherT(getCreds(exprWithPathsRefined))
-      summary              <- EitherT(wd.lookAfter(runActions(exprWithPathsRefined, creds)))
+      rawCommand <- EitherT.right[Failure](prompt.command)
+      command    <- EitherT.right[Failure](preproc.rebuild(rawCommand))
+      expression <- EitherT(parse.toExpression(command)).leftMap(x => Failure(Seq(x)))
+      creds      <- EitherT(getCreds(expression))
+      summary    <- EitherT(wd.lookAfter(runActions(expression, creds)))
     } yield summary).value
   }
 }

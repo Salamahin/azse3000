@@ -14,7 +14,8 @@ class Program[F[_]: Monad: Applicative, T, K](
   refine: Refine[F],
   endpoint: EndpointUri[F, T, K],
   par: Parallel[F],
-  fs: FileSystem[F, T, K]
+  fs: FileSystem[F, T, K],
+  wd: Watcher[F]
 ) {
 
   import cats.instances.either._
@@ -31,7 +32,7 @@ class Program[F[_]: Monad: Applicative, T, K](
       (_, _, searchPrefix) <- EitherT(endpoint.decompose(path)).leftWiden[Issue with Aggregate]
 
       results <- EitherT.right[Issue with Aggregate](for {
-                  actionResults     <- fs.foreachFile(container, searchPrefix) { par.traverse(_)(action) }
+                  actionResults     <- fs.foreachFile(container, searchPrefix) { par.traverseN(_)(action) }
                   (failed, succeed) = actionResults.toVector.separate
                 } yield OperationResult(succeed.size, failed))
 
@@ -186,7 +187,7 @@ class Program[F[_]: Monad: Applicative, T, K](
       expression           <- EitherT(parse.toExpression(command)).leftMap(x => Failure(Seq(x)))
       exprWithPathsRefined <- EitherT.right[Failure](refinePaths(expression))
       creds                <- EitherT(getCreds(exprWithPathsRefined))
-      summary              <- EitherT(runActions(exprWithPathsRefined, creds))
+      summary              <- EitherT(wd.lookAfter(runActions(exprWithPathsRefined, creds)))
     } yield summary).value
   }
 }

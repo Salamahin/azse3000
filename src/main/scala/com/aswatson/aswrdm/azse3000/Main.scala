@@ -2,15 +2,17 @@ package com.aswatson.aswrdm.azse3000
 
 import java.net.URI
 
+import com.aswatson.aswrdm.azse3000.Main.ENV
 import com.aswatson.aswrdm.azse3000.azure.{AzureEndpoints, ZioAzureFileSystem}
 import com.aswatson.aswrdm.azse3000.configurable.{Config, ConfigurationBasedPathRefinery}
 import com.aswatson.aswrdm.azse3000.expression.InputParser
 import com.aswatson.aswrdm.azse3000.shared._
 import com.microsoft.azure.storage.blob.{CloudBlobContainer, CloudBlockBlob}
 import zio._
-import zio.console.{Console, getStrLn, putStrLn}
+import zio.clock.Clock
+import zio.console.{Console, getStrLn, putStr, putStrLn}
 
-class ConsoleZioPrompt(knownSecrets: Map[String, Map[String, String]]) extends Prompt[RIO[Console, *]] {
+class ConsoleZioPrompt(knownSecrets: Map[String, Map[String, String]]) extends Prompt[RIO[ENV, *]] {
   override def command =
     for {
       _     <- putStrLn("Enter command:")
@@ -24,8 +26,34 @@ class ConsoleZioPrompt(knownSecrets: Map[String, Map[String, String]]) extends P
     } yield Secret(token)
 }
 
+class ConsoleProgressWatcher extends Watcher[RIO[ENV, *]] {
+  override def lookAfter[T](program: RIO[ENV, T]): RIO[ENV, T] = {
+    import zio.duration._
+
+    val showProgress = (for {
+      _ <- putStr(".")
+      _ <- ZIO.sleep(1 second)
+      _ <- putStr(".")
+      _ <- ZIO.sleep(1 second)
+      _ <- putStr(".\r")
+      _ <- ZIO.sleep(1 second)
+    } yield ()).repeat(Schedule.forever)
+
+    for {
+      _        <- putStrLn("")
+      progress <- showProgress.fork
+      result   <- program
+      _        <- progress.interrupt
+      _        <- putStrLn("")
+    } yield result
+  }
+}
+
 class ZioParallel[E](parallelism: Int) extends Parallel[RIO[E, *]] {
   override def traverse[T, U](items: Seq[T])(action: T => RIO[E, U]): RIO[E, Seq[U]] =
+    ZIO.traversePar(items)(action)
+
+  override def traverseN[T, U](items: Seq[T])(action: T => RIO[E, U]): RIO[E, Seq[U]] =
     ZIO.traverseParN(parallelism)(items)(action)
 }
 
@@ -88,6 +116,7 @@ class ZioAzureUri[E] extends EndpointUri[RIO[E, *], CloudBlockBlob, CloudBlobCon
 }
 
 object Main extends zio.App {
+  type ENV = Clock with Console
 
   private def loadConf() = {
     import pureconfig._
@@ -123,23 +152,24 @@ object Main extends zio.App {
   }
 
   override def run(args: List[String]): ZIO[zio.ZEnv, Nothing, Int] = {
-    implicit val conf = loadConf()
+    val conf = loadConf()
 
     import zio.interop.catz.core._
 
-    implicit val par: Parallel[RIO[Console, *]]                                              = new ZioParallel(conf.parallelism)
-    implicit val prompt: Prompt[RIO[Console, *]]                                             = new ConsoleZioPrompt(conf.knownSecrets)
-    implicit val parse: Parse[RIO[Console, *]]                                               = new ZioParse
-    implicit val credsVault: CredsRepo[RIO[Console, *]]                                      = new ZioSecretsRepo(conf.knownSecrets)
-    implicit val pathRefine: Refine[RIO[Console, *]]                                         = new ZioPathRefinery(conf.knownHosts)
-    implicit val endpoints: EndpointUri[RIO[Console, *], CloudBlockBlob, CloudBlobContainer] = new ZioAzureUri
-    implicit val fs: FileSystem[RIO[Console, *], CloudBlockBlob, CloudBlobContainer] = new ZioAzureFileSystem(
+    implicit val wd: Watcher[RIO[ENV, *]]                                               = new ConsoleProgressWatcher
+    implicit val par: Parallel[RIO[ENV, *]]                                              = new ZioParallel(conf.parallelism)
+    implicit val prompt: Prompt[RIO[ENV, *]]                                             = new ConsoleZioPrompt(conf.knownSecrets)
+    implicit val parse: Parse[RIO[ENV, *]]                                               = new ZioParse
+    implicit val credsVault: CredsRepo[RIO[ENV, *]]                                      = new ZioSecretsRepo(conf.knownSecrets)
+    implicit val pathRefine: Refine[RIO[ENV, *]]                                         = new ZioPathRefinery(conf.knownHosts)
+    implicit val endpoints: EndpointUri[RIO[ENV, *], CloudBlockBlob, CloudBlobContainer] = new ZioAzureUri
+    implicit val fs: FileSystem[RIO[ENV, *], CloudBlockBlob, CloudBlobContainer] = new ZioAzureFileSystem(
       conf.parallelism
     )
 
-    def attempt: ZIO[Console, Throwable, Unit] = {
+    def attempt: ZIO[ENV, Throwable, Unit] = {
       (for {
-        results <- new Program[RIO[Console, *], CloudBlockBlob, CloudBlobContainer].run.absolve
+        results <- new Program[RIO[ENV, *], CloudBlockBlob, CloudBlobContainer].run.absolve
 
         report = results
           .map {

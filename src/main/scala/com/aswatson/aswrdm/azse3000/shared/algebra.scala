@@ -20,6 +20,10 @@ trait CredsRepo[F[_]] {
   def creds(acc: Account, cont: ContainerName): F[Option[Secret]]
 }
 
+trait Watcher[F[_]] {
+  def lookAfter[T](program: F[T]): F[T]
+}
+
 trait EndpointUri[F[_], T, K] {
   def decompose(path: Path): F[Either[MalformedPath, DECOMPOSED_PATH]]
 
@@ -32,6 +36,7 @@ trait EndpointUri[F[_], T, K] {
 
 trait Parallel[F[_]] {
   def traverse[T, U](items: Seq[T])(action: T => F[U]): F[Seq[U]]
+  def traverseN[T, U](items: Seq[T])(action: T => F[U]): F[Seq[U]]
 }
 
 trait FileSystem[F[_], T, K] {

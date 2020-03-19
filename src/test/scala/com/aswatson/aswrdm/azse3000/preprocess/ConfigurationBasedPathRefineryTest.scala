@@ -1,4 +1,4 @@
-package com.aswatson.aswrdm.azse3000.configurable
+package com.aswatson.aswrdm.azse3000.preprocess
 
 import com.aswatson.aswrdm.azse3000.shared.Command
 import org.scalatest.{FunSuite, Matchers}

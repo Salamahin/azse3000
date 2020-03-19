@@ -1,9 +1,9 @@
-package com.aswatson.aswrdm.azse3000.configurable
+package com.aswatson.aswrdm.azse3000.preprocess
 
 import com.aswatson.aswrdm.azse3000.shared.Command
 
 object ConfigurationBasedPathRefinery {
-  private val pattern = "([\\w-]+)@([\\w-]+):/([\\w-./=]+)".r
+  private val pattern = "([\\w-]+)@([\\w-]+):/([\\w-./=]+)?".r
 
   def refinePaths(knownHosts: Map[String, String])(command: Command) = {
     val refinedCommand = pattern.replaceAllIn(

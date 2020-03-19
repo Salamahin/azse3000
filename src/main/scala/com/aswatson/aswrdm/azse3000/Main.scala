@@ -4,8 +4,9 @@ import java.net.URI
 
 import com.aswatson.aswrdm.azse3000.Main.ENV
 import com.aswatson.aswrdm.azse3000.azure.{AzureEndpoints, ZioAzureFileSystem}
-import com.aswatson.aswrdm.azse3000.configurable.{Config, ConfigurationBasedPathRefinery}
+import com.aswatson.aswrdm.azse3000.configurable.Config
 import com.aswatson.aswrdm.azse3000.expression.InputParser
+import com.aswatson.aswrdm.azse3000.preprocess.{ConfigurationBasedPathRefinery, ExpandCurlyBracesRefinery}
 import com.aswatson.aswrdm.azse3000.shared._
 import com.microsoft.azure.storage.blob.{CloudBlobContainer, CloudBlockBlob}
 import zio._
@@ -59,7 +60,8 @@ class ZioParallel[E](parallelism: Int) extends Parallel[RIO[E, *]] {
 
 class ZioPathPreprocessor[E](knownHosts: Map[String, String]) extends Preprocess[RIO[E, *]] {
   override def rebuild(command: Command): RIO[E, Command] = UIO {
-    ConfigurationBasedPathRefinery.refinePaths(knownHosts)(command)
+    val expanded = ExpandCurlyBracesRefinery.expand(command)
+    ConfigurationBasedPathRefinery.refinePaths(knownHosts)(expanded)
   }
 }
 
@@ -83,6 +85,7 @@ class ZioAzureUri[E] extends EndpointUri[RIO[E, *], CloudBlockBlob, CloudBlobCon
       case AzureEndpoints(_, _, prefix) => prefix
     }
   }
+
   override def decompose(path: Path): RIO[E, Either[MalformedPath, (Account, ContainerName, Path)]] = URIO {
     import cats.syntax.either._
 
@@ -132,12 +135,12 @@ object Main extends zio.App {
   private def formatOperationReport(description: OperationDescription, stats: OperationResult) = {
     def formatFailures(failures: Seq[FileOperationFailed]) = {
       if (failures.isEmpty) "none"
-      else failures.map(f => s"  * ${f.file.path}: ${f.th.getCause}").mkString("\n")
+      else "\n" + failures.map(f => s"    * ${f.file.path}: ${f.th.getCause}").mkString("\n")
     }
 
-    s"""${description.description}
-       |Successfully processed ${stats.succeed} items
-       |Failures: ${formatFailures(stats.errors)}
+    s"""  * ${description.description}
+       |    Successfully processed ${stats.succeed} items
+       |    Failures: ${formatFailures(stats.errors)}
        |""".stripMargin
   }
 

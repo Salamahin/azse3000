@@ -41,7 +41,6 @@ class ConsoleProgressWatcher extends Watcher[RIO[ENV, *]] {
     } yield ()).repeat(Schedule.forever)
 
     for {
-      _        <- putStrLn("")
       progress <- showProgress.fork
       result   <- program
       _        <- progress.interrupt
@@ -140,8 +139,7 @@ object Main extends zio.App {
 
     s"""  * ${description.description}
        |    Successfully processed ${stats.succeed} items
-       |    Failures: ${formatFailures(stats.errors)}
-       |""".stripMargin
+       |    Failures: ${formatFailures(stats.errors)}""".stripMargin
   }
 
   private def formatIssues(issues: Seq[Issue with Aggregate]) = {

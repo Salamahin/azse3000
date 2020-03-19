@@ -8,7 +8,7 @@ import zio.{RIO, Task, ZIO}
 class ZioAzureFileSystem[E](batchSize: Int) extends FileSystem[RIO[E, *], CloudBlockBlob, CloudBlobContainer] {
   override def foreachFile[U](cont: CloudBlobContainer, prefix: Path)(
     batchOperation: Seq[CloudBlockBlob] => RIO[E, Seq[U]]
-  ): RIO[E, Seq[U]] = {
+  ) = {
 
     def listBatch(token: ResultContinuation) = Task {
       cont.listBlobsSegmented(
@@ -40,10 +40,14 @@ class ZioAzureFileSystem[E](batchSize: Int) extends FileSystem[RIO[E, *], CloudB
       else processedItems
     }
 
-    for {
+    val processing = for {
       firstBatch     <- listBatch(null)
       processedBlobs <- batchBlobsAndContinue(firstBatch)
     } yield processedBlobs
+
+    processing
+      .mapError(e => BatchProcessingFailure(Path(cont.getUri.toString), e))
+      .either
   }
 
   override def copyContent(file: CloudBlockBlob, to: CloudBlockBlob): Task[Either[FileOperationFailed, Unit]] = {

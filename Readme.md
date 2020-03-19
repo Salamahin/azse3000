@@ -20,8 +20,6 @@ Default format is *https://account.blob.core.windows.net/container/path*
 ## secrets.conf
 Optional file containing sensitive information
 ```conf
-parallelism: 200
-
 known-hosts: {
     myenv: https://account.blob.core.windows.net
 }

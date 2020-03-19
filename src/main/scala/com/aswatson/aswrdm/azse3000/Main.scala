@@ -147,6 +147,8 @@ object Main extends zio.App {
         case InvalidCommand(msg)   => s"  * Failed to parse an expression: $msg"
         case MalformedPath(path)   => s"  * Format of path ${path.path} is unexpected"
         case NoSuchContainer(path) => s"  * Failed to find a container of path ${path.path}"
+        case BatchProcessingFailure(path, throwable) =>
+          s"  * Failed to batch process data in path ${path.path} because of \"${throwable.getMessage}\""
       }
       .mkString("\n")
   }
@@ -156,7 +158,7 @@ object Main extends zio.App {
 
     import zio.interop.catz.core._
 
-    implicit val wd: Watcher[RIO[ENV, *]]                                               = new ConsoleProgressWatcher
+    implicit val wd: Watcher[RIO[ENV, *]]                                                = new ConsoleProgressWatcher
     implicit val par: Parallel[RIO[ENV, *]]                                              = new ZioParallel(conf.parallelism)
     implicit val prompt: Prompt[RIO[ENV, *]]                                             = new ConsoleZioPrompt(conf.knownSecrets)
     implicit val parse: Parse[RIO[ENV, *]]                                               = new ZioParse

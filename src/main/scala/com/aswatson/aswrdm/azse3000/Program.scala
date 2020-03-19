@@ -30,13 +30,17 @@ class Program[F[_]: Monad: Applicative, T, K](
     (for {
       container            <- EitherT(endpoint.findContainer(creds(path), path)).leftWiden[Issue with Aggregate]
       (_, _, searchPrefix) <- EitherT(endpoint.decompose(path)).leftWiden[Issue with Aggregate]
-
-      results <- EitherT.right[Issue with Aggregate](for {
-                  actionResults     <- fs.foreachFile(container, searchPrefix) { par.traverseN(_)(action) }
-                  (failed, succeed) = actionResults.toVector.separate
-                } yield OperationResult(succeed.size, failed))
-
+      results              <- batchActions(action, container, searchPrefix).leftWiden[Issue with Aggregate]
     } yield results).value
+
+  private def batchActions[U](action: T => F[Either[FileOperationFailed, U]], container: K, searchPrefix: Path) = {
+    for {
+      actionResults <- EitherT(fs.foreachFile(container, searchPrefix) {
+                        par.traverseN(_)(action)
+                      })
+      (failed, succeed) = actionResults.toVector.separate
+    } yield OperationResult(succeed.size, failed)
+  }
 
   private def copyFiles(creds: CREDS, from: Path, to: Path) = forEachFileIn(creds, from) { fromFile =>
     (for {
@@ -153,31 +157,37 @@ class Program[F[_]: Monad: Applicative, T, K](
     val action = new ActionInterpret[F, Seq[(OperationDescription, Either[Issue with Aggregate, OperationResult])]] {
       override def run(term: Action) = term match {
 
-        case Copy(from, to) => par.traverse(from) { f =>
-          for {
-            ops <- copyFiles(creds, f, to)
-          } yield OperationDescription(s"Copy from ${f.path} to ${to.path}") -> ops
-        }
+        case Copy(from, to) =>
+          par.traverse(from) { f =>
+            for {
+              ops <- copyFiles(creds, f, to)
+            } yield OperationDescription(s"Copy from ${f.path} to ${to.path}") -> ops
+          }
 
-        case Move(from, to) => par.traverse(from) { f =>
-          for {
-            ops <- moveFiles(creds, f, to)
-          } yield OperationDescription(s"Move from ${f.path} to ${to.path}") -> ops
-        }
+        case Move(from, to) =>
+          par.traverse(from) { f =>
+            for {
+              ops <- moveFiles(creds, f, to)
+            } yield OperationDescription(s"Move from ${f.path} to ${to.path}") -> ops
+          }
 
-        case Remove(from) => par.traverse(from) { f =>
-          for {
-            ops <- removeFiles(creds, f)
-          } yield OperationDescription(s"Remove from ${f.path}") -> ops
-        }
+        case Remove(from) =>
+          par.traverse(from) { f =>
+            for {
+              ops <- removeFiles(creds, f)
+            } yield OperationDescription(s"Remove from ${f.path}") -> ops
+          }
       }
     }
 
     for {
       interpreted <- ActionInterpret.interpret(expression)(Applicative[F], action)
-      (failures, suceeds) = interpreted.flatten.map {
-        case (descr, opsResults) => opsResults.map(descr -> _)
-      }.separate
+      (failures, suceeds) = interpreted
+        .flatten
+        .map {
+          case (descr, opsResults) => opsResults.map(descr -> _)
+        }
+        .separate
     } yield if (failures.nonEmpty) Left(Failure(failures)) else Right(suceeds.toMap)
   }
 

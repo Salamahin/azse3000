@@ -147,8 +147,8 @@ object Main extends zio.App {
         case InvalidCommand(msg)   => s"  * Failed to parse an expression: $msg"
         case MalformedPath(path)   => s"  * Format of path ${path.path} is unexpected"
         case NoSuchContainer(path) => s"  * Failed to find a container of path ${path.path}"
-        case BatchProcessingFailure(path, throwable) =>
-          s"  * Failed to batch process data in path ${path.path} because of \"${throwable.getMessage}\""
+        case FileSystemFailure(path, throwable) =>
+          s"""  * Operations under path ${path.path} failed because "${throwable.getMessage}""""
       }
       .mkString("\n")
   }

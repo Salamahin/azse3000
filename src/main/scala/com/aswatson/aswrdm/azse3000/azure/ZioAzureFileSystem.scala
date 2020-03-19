@@ -46,7 +46,7 @@ class ZioAzureFileSystem[E](batchSize: Int) extends FileSystem[RIO[E, *], CloudB
     } yield processedBlobs
 
     processing
-      .mapError(e => BatchProcessingFailure(Path(cont.getUri.toString), e))
+      .mapError(e => FileSystemFailure(Path(cont.getUri.toString), e))
       .either
   }
 

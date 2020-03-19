@@ -2,11 +2,11 @@ package com.aswatson.aswrdm.azse3000.shared
 
 sealed trait Issue
 sealed trait Aggregate
-final case class InvalidCommand(msg: String)                          extends Exception with Issue with Aggregate
-final case class MalformedPath(path: Path)                            extends Exception with Issue with Aggregate
-final case class NoSuchContainer(path: Path)                          extends Exception with Issue with Aggregate
-final case class BatchProcessingFailure(path: Path, cause: Throwable) extends Exception with Issue with Aggregate
-final case class Failure(reasons: Seq[Issue with Aggregate])          extends Exception with Issue
+final case class InvalidCommand(msg: String)                     extends Exception with Issue with Aggregate
+final case class MalformedPath(path: Path)                       extends Exception with Issue with Aggregate
+final case class NoSuchContainer(path: Path)                     extends Exception with Issue with Aggregate
+final case class FileSystemFailure(path: Path, cause: Throwable) extends Exception with Issue with Aggregate
+final case class Failure(reasons: Seq[Issue with Aggregate])     extends Exception with Issue
 
 final case class Path(path: String) extends AnyVal {
   def resolve(other: Path): Path = Path(s"$path/${other.path}")

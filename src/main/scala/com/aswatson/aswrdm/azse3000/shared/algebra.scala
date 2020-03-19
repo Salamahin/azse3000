@@ -44,5 +44,5 @@ trait FileSystem[F[_], T, K] {
 
   def remove(file: T): F[Either[FileOperationFailed, Unit]]
 
-  def foreachFile[U](container: K, prefix: Path)(action: Seq[T] => F[Seq[U]]): F[Either[BatchProcessingFailure, Seq[U]]]
+  def foreachFile[U](container: K, prefix: Path)(action: Seq[T] => F[Seq[U]]): F[Either[FileSystemFailure, Seq[U]]]
 }

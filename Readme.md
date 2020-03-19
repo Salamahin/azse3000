@@ -12,7 +12,7 @@ cp from1 to1 && mv from2 to2 && rm from3
 ```
  
 Every path within a single command is processed in parallel mode, while execution 
-of commands separated by *&* is sequential
+of commands separated by *&&* is sequential
  
 ## Path format
 Default format is *https://account.blob.core.windows.net/container/path*
@@ -33,7 +33,7 @@ known-secrets: {
 }
 ```
 
-Specifying a host in *known-hosts* one may specify paths for command in the
+After setting a host in *known-hosts* one may specify paths for command in the
 following format:
 ```
 cp container@myenv:/from container@myenv:/to

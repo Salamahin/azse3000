@@ -54,7 +54,7 @@ class Program[F[_]: Monad: Applicative, T, K](
       filePrefix <- EitherT.right[FileOperationFailed](endpoint.pathWithinContainer(fromFile))
       toFile     <- EitherT.right[FileOperationFailed](endpoint.toFile(creds(to), to.resolve(filePrefix)))
       _          <- EitherT(fs.copyContent(fromFile, toFile))
-      _          <- EitherT(fs.remove(toFile))
+      _          <- EitherT(fs.remove(fromFile))
     } yield ()).value
   }
 
@@ -65,33 +65,6 @@ class Program[F[_]: Monad: Applicative, T, K](
           result <- fs.remove(f)
         } yield result
     )
-
-//  private def refinePaths(expr: Expression): F[Expression] = {
-//    expr match {
-//      case And(left, right) =>
-//        for {
-//          refinedLeft  <- refinePaths(left)
-//          refinedRight <- refinePaths(right)
-//        } yield And(refinedLeft, refinedRight)
-//
-//      case Copy(from, to) =>
-//        for {
-//          refinedFrom <- from.toVector.traverse(x => refine.preprocess(x))
-//          refinedTo   <- refine.preprocess(to)
-//        } yield Copy(refinedFrom, refinedTo)
-//
-//      case Move(from, to) =>
-//        for {
-//          refinedFrom <- from.toVector.traverse(x => refine.preprocess(x))
-//          refinedTo   <- refine.preprocess(to)
-//        } yield Move(refinedFrom, refinedTo)
-//
-//      case Remove(from) =>
-//        for {
-//          refinedSources <- from.toVector.traverse(x => refine.preprocess(x))
-//        } yield Remove(refinedSources)
-//    }
-//  }
 
   private def getCreds(tree: Expression) = {
 

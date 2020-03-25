@@ -6,21 +6,21 @@ import com.aswatson.aswrdm.azse3000.shared.{Action, And, Expression}
 import scala.annotation.tailrec
 import scala.language.higherKinds
 
-trait ActionInterpret[F[_], T] {
-  def run(term: Action): F[T]
+trait ActionInterpret[F[_], P, T] {
+  def run(term: Action[P]): F[T]
 }
 
 object ActionInterpret {
-  def interpret[F[_]: Applicative, T](
-    expression: Expression
-  )(implicit int: ActionInterpret[F, T]) = {
+  def interpret[F[_]: Applicative, P, T](
+    expression: Expression[P]
+  )(implicit int: ActionInterpret[F, P, T]) = {
 
     @tailrec
-    def iter(expressions: List[Expression], acc: Vector[F[T]]): Vector[F[T]] = {
+    def iter(expressions: List[Expression[P]], acc: Vector[F[T]]): Vector[F[T]] = {
       expressions match {
-        case Nil                      => acc
-        case (head: Action) :: tail   => iter(tail, acc :+ int.run(head))
-        case And(left, right) :: tail => iter(left :: right :: tail, acc)
+        case Nil                       => acc
+        case (head: Action[P]) :: tail => iter(tail, acc :+ int.run(head))
+        case And(left, right) :: tail  => iter(left :: right :: tail, acc)
       }
     }
 

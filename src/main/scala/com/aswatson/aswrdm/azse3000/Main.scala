@@ -20,7 +20,7 @@ class ConsoleZioPrompt(knownSecrets: Map[String, Map[String, String]]) extends P
       input <- getStrLn
     } yield Command(input)
 
-  override def creds(acc: Account, cont: ContainerName) =
+  override def creds(acc: Account, cont: Container) =
     for {
       -     <- putStrLn(s"Enter SAS token for ${cont.name}@${acc.name}:")
       token <- getStrLn
@@ -65,7 +65,7 @@ class ZioPathPreprocessor[E](knownHosts: Map[String, String]) extends Preprocess
 }
 
 class ZioSecretsRepo[E](knownSecrets: Map[String, Map[String, String]]) extends CredsRepo[RIO[E, *]] {
-  override def creds(acc: Account, cont: ContainerName): RIO[E, Option[Secret]] = UIO {
+  override def creds(acc: Account, cont: Container): RIO[E, Option[Secret]] = UIO {
     for {
       accSecrets <- knownSecrets.get(acc.name)
       secret     <- accSecrets.get(cont.name)
@@ -77,7 +77,7 @@ class ZioParse[E] extends Parse[RIO[E, *]] {
   override def toExpression(prompted: Command) = URIO(InputParser(prompted))
 }
 
-class ZioAzureUri[E] extends EndpointUri[RIO[E, *], CloudBlockBlob, CloudBlobContainer] {
+class ZioAzure[E] extends Endpoint[RIO[E, *], CloudBlockBlob, CloudBlobContainer] {
 
   override def pathWithinContainer(file: CloudBlockBlob): RIO[E, Path] = Task {
     file.getUri match {
@@ -85,7 +85,7 @@ class ZioAzureUri[E] extends EndpointUri[RIO[E, *], CloudBlockBlob, CloudBlobCon
     }
   }
 
-  override def decompose(path: Path): RIO[E, Either[MalformedPath, (Account, ContainerName, Path)]] = URIO {
+  override def decompose(path: Path): RIO[E, Either[MalformedPath, (Account, Container, Path)]] = URIO {
     import cats.syntax.either._
 
     try {
@@ -98,11 +98,11 @@ class ZioAzureUri[E] extends EndpointUri[RIO[E, *], CloudBlockBlob, CloudBlobCon
     }
   }
 
-  override def toFile(secret: Secret, fullPath: Path): RIO[E, CloudBlockBlob] = Task {
+  override def toBlob(secret: Secret, fullPath: Path): RIO[E, CloudBlockBlob] = Task {
     AzureEndpoints.toFile(fullPath, secret)
   }
 
-  override def findContainer(secret: Secret, excessPath: Path): RIO[E, Either[NoSuchContainer, CloudBlobContainer]] =
+  override def toContainer(secret: Secret, excessPath: Path): RIO[E, Either[NoSuchContainer, CloudBlobContainer]] =
     URIO {
       import cats.syntax.either._
 
@@ -134,7 +134,7 @@ object Main extends zio.App {
   private def formatOperationReport(description: OperationDescription, stats: OperationResult) = {
     def formatFailures(failures: Seq[FileOperationFailed]) = {
       if (failures.isEmpty) "none"
-      else "\n" + failures.map(f => s"    * ${f.file.path}: ${f.th.getCause}").mkString("\n")
+      else "\n" + failures.map(f => s"    * ${f.file.relative}: ${f.th.getCause}").mkString("\n")
     }
 
     s"""  * ${description.description}
@@ -146,10 +146,10 @@ object Main extends zio.App {
     issues
       .map {
         case InvalidCommand(msg)   => s"  * Failed to parse an expression: $msg"
-        case MalformedPath(path)   => s"  * Format of path ${path.path} is unexpected"
-        case NoSuchContainer(path) => s"  * Failed to find a container of path ${path.path}"
+        case MalformedPath(path)   => s"  * Format of path ${path.relative} is unexpected"
+        case NoSuchContainer(path) => s"  * Failed to find a container of path ${path.relative}"
         case FileSystemFailure(path, throwable) =>
-          s"""  * Operations under path ${path.path} failed because "${throwable.getMessage}""""
+          s"""  * Operations under path ${path.relative} failed because "${throwable.getMessage}""""
       }
       .mkString("\n")
   }
@@ -165,7 +165,7 @@ object Main extends zio.App {
     implicit val parse: Parse[RIO[ENV, *]]                                               = new ZioParse
     implicit val credsVault: CredsRepo[RIO[ENV, *]]                                      = new ZioSecretsRepo(conf.knownSecrets)
     implicit val pathRefine: Preprocess[RIO[ENV, *]]                                         = new ZioPathPreprocessor(conf.knownHosts)
-    implicit val endpoints: EndpointUri[RIO[ENV, *], CloudBlockBlob, CloudBlobContainer] = new ZioAzureUri
+    implicit val endpoints: Endpoint[RIO[ENV, *], CloudBlockBlob, CloudBlobContainer] = new ZioAzure
     implicit val fs: FileSystem[RIO[ENV, *], CloudBlockBlob, CloudBlobContainer] = new ZioAzureFileSystem(
       conf.parallelism
     )

@@ -50,24 +50,24 @@ class ZioAzureFileSystem[E](batchSize: Int) extends FileSystem[RIO[E, *], CloudB
       .either
   }
 
-  override def copyContent(file: CloudBlockBlob, to: CloudBlockBlob): Task[Either[FileOperationFailed, Unit]] = {
+  override def copyContent(fromBlob: CloudBlockBlob, toBlob: CloudBlockBlob): Task[Either[FileOperationFailed, Unit]] = {
     import cats.syntax.either._
 
-    val copy = ZIO { to.startCopy(file, null, true, null, null, null, null) }
+    val copy = ZIO { toBlob.startCopy(fromBlob, null, true, null, null, null, null) }
 
     copy.fold(
-      cause => FileOperationFailed(Path(file.getUri.toString), cause).asLeft[Unit],
+      cause => FileOperationFailed(Path(fromBlob.getUri.toString), cause).asLeft[Unit],
       _ => ().asRight[FileOperationFailed]
     )
   }
 
-  override def remove(file: CloudBlockBlob): Task[Either[FileOperationFailed, Unit]] = {
+  override def remove(blob: CloudBlockBlob): Task[Either[FileOperationFailed, Unit]] = {
     import cats.syntax.either._
 
-    val delete = Task(file.delete())
+    val delete = Task(blob.delete())
 
     delete.fold(
-      cause => FileOperationFailed(Path(file.getUri.toString), cause).asLeft[Unit],
+      cause => FileOperationFailed(Path(blob.getUri.toString), cause).asLeft[Unit],
       _ => ().asRight[FileOperationFailed]
     )
   }

@@ -5,7 +5,7 @@ import cats.{Applicative, Monad}
 import com.aswatson.aswrdm.azse3000.expression.ActionInterpret
 import com.aswatson.aswrdm.azse3000.shared._
 
-class Program[F[_]: Monad: Applicative, T, K](
+class FileSystemAction[F[_]: Monad: Applicative, T, K](
   implicit
   endpoint: Endpoint[F, T, K],
   par: Parallel[F],
@@ -77,7 +77,7 @@ class Program[F[_]: Monad: Applicative, T, K](
       }
     }
 
-  def run(expression: Expression[FullPath]) =
+  def evaluate(expression: Expression[FullPath]) =
     for {
       interpreted <- ActionInterpret.interpret(expression)
       (failures, succeeds) = interpreted

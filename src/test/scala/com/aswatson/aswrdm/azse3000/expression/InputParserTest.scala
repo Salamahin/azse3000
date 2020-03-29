@@ -9,15 +9,15 @@ class InputParserTest extends FunSuite with Matchers {
   import InputParserTest._
 
   private val primitives = Seq(
-    Command("cp a1 a2 a3 b") -> Copy(Seq("a1", "a2", "a3").map(Path), Path("b")),
-    Command("mv a1 a2 a3 b") -> Move(Seq("a1", "a2", "a3").map(Path), Path("b")),
-    Command("rm a1 a2 a3")   -> Remove(Seq("a1", "a2", "a3").map(Path))
+    Command("cp a1 a2 a3 b") -> Copy(Seq("a1", "a2", "a3").map(InputPath), InputPath("b")),
+    Command("mv a1 a2 a3 b") -> Move(Seq("a1", "a2", "a3").map(InputPath), InputPath("b")),
+    Command("rm a1 a2 a3")   -> Remove(Seq("a1", "a2", "a3").map(InputPath))
   )
 
   primitives.foreach {
-    case (expression, expectedTree) =>
-      test(s"should parse primitive `$expression`") {
-        InputParser(expression) match {
+    case (command, expectedTree) =>
+      test(s"should parse `$command`") {
+        InputParser(command) match {
           case Right(c) => c should be(expectedTree)
           case Left(v)  => fail(s"Failed to parse tree: $v")
         }
@@ -40,15 +40,13 @@ class InputParserTest extends FunSuite with Matchers {
 }
 
 object InputParserTest {
-  implicit val print: ActionInterpret[Id, String] = {
+  implicit val print: ActionInterpret[Id, InputPath, String] = {
     case Copy(sources, to) => s"cp ${sources.map(_.path).mkString(", ")} to ${to.path}"
     case Move(sources, to) => s"mv ${sources.map(_.path).mkString(", ")} to ${to.path}"
     case Remove(sources)   => s"rm ${sources.map(_.path).mkString(", ")}"
   }
 
-  implicit val cmdSemi: Semigroup[Command] = new Semigroup[Command] {
-    override def combine(x: Command, y: Command): Command = Command(
-      s"${x.cmd} && ${y.cmd}"
-    )
-  }
+  implicit val cmdSemi: Semigroup[Command] = (x: Command, y: Command) => Command(
+    s"${x.cmd} && ${y.cmd}"
+  )
 }

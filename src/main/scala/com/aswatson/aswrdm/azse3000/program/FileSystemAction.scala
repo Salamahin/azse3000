@@ -1,12 +1,12 @@
-package com.aswatson.aswrdm.azse3000
+package com.aswatson.aswrdm.azse3000.program
 
+import cats.Monad
 import cats.data.EitherT
-import cats.{Applicative, Monad}
 import com.aswatson.aswrdm.azse3000.expression.ActionInterpret
 import com.aswatson.aswrdm.azse3000.shared._
 
-class FileSystemAction[F[_]: Monad: Applicative, T, K](
-  implicit
+class FileSystemAction[F[_]: Monad, T, K](
+  paths: MapPath,
   endpoint: Endpoint[F, T, K],
   par: Parallel[F],
   fs: FileSystem[F, T, K]
@@ -16,7 +16,6 @@ class FileSystemAction[F[_]: Monad: Applicative, T, K](
   import cats.instances.vector._
   import cats.syntax.alternative._
   import cats.syntax.bifunctor._
-  import cats.syntax.flatMap._
   import cats.syntax.functor._
 
   private def forEachBlobIn[U](path: FullPath)(action: T => F[Either[FileOperationFailed, U]]) =
@@ -46,38 +45,38 @@ class FileSystemAction[F[_]: Monad: Applicative, T, K](
   private def removeBlobs(path: FullPath) = forEachBlobIn(path) { fs.remove }
 
   private implicit val fsActionInterpret =
-    new ActionInterpret[F, FullPath, Seq[(OperationDescription, Either[Issue with Aggregate, OperationResult])]] {
-      override def run(term: Action[FullPath]) = term match {
+    new ActionInterpret[F, Seq[(OperationDescription, Either[Issue with Aggregate, OperationResult])]] {
+      override def run(term: Action) = term match {
 
         case Copy(fromPaths, to) =>
           par.traverse(fromPaths) { from =>
             for {
-              ops      <- copyBlobs(from, to)
-              showFrom <- endpoint.show(from)
-              showTo   <- endpoint.show(to)
+              ops      <- copyBlobs(paths.map(from), paths.map(to))
+              showFrom = from.path
+              showTo   = to.path
             } yield OperationDescription(s"Copy from $showFrom to $showTo") -> ops
           }
 
         case Move(fromPaths, to) =>
           par.traverse(fromPaths) { from =>
             for {
-              ops      <- moveBlobs(from, to)
-              showFrom <- endpoint.show(from)
-              showTo   <- endpoint.show(to)
+              ops      <- moveBlobs(paths.map(from), paths.map(to))
+              showFrom = from.path
+              showTo   = to.path
             } yield OperationDescription(s"Move from $showFrom to $showTo") -> ops
           }
 
         case Remove(fromPaths) =>
           par.traverse(fromPaths) { from =>
             for {
-              ops      <- removeBlobs(from)
-              showFrom <- endpoint.show(from)
+              ops      <- removeBlobs(paths.map(from))
+              showFrom = from.path
             } yield OperationDescription(s"Remove from $showFrom") -> ops
           }
       }
     }
 
-  def evaluate(expression: Expression[FullPath]) =
+  def evaluate(expression: Expression): F[Either[Failure, Map[OperationDescription, OperationResult]]] =
     for {
       interpreted <- ActionInterpret.interpret(expression)
       (failures, succeeds) = interpreted

@@ -6,7 +6,8 @@ import com.aswatson.aswrdm.azse3000.shared._
 import scala.util.parsing.combinator.{PackratParsers, RegexParsers}
 
 object InputParser extends RegexParsers with PackratParsers {
-  implicit val expSemigroup: Semigroup[Expression] = (x: Expression, y: Expression) => And(x, y)
+  implicit val expSemigroup: Semigroup[Expression] =
+    (x: Expression, y: Expression) => And(x, y)
 
   private def path: Parser[Path] =
     "[\\w@\\-:/.]+".r ^^ { x =>

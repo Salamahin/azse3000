@@ -31,7 +31,6 @@ trait Endpoint[F[_], B, K] {
 
 trait Parallel[F[_]] {
   def traverse[T, U](items: Seq[T])(action: T => F[U]): F[Seq[U]]
-  def traverseN[T, U](items: Seq[T])(action: T => F[U]): F[Seq[U]]
   def zip[T, U](first: F[T], second: F[U]): F[(T, U)]
 }
 

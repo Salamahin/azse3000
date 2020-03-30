@@ -2,10 +2,10 @@ package com.aswatson.aswrdm.azse3000.shared
 
 sealed trait Fatal
 sealed trait Aggregate
-final case class InvalidCommand(msg: String)                          extends Exception with Fatal with Aggregate
-final case class MalformedPath(msg: String)                           extends Exception with Fatal with Aggregate
-final case class FileSystemFailure(msg: String, cause: Throwable)     extends Exception with Fatal with Aggregate
-final case class AggregatedFatals(reasons: Seq[Fatal with Aggregate]) extends Exception with Fatal
+final case class InvalidCommand(msg: String)                         extends Exception with Fatal with Aggregate
+final case class MalformedPath(msg: String)                          extends Exception with Fatal with Aggregate
+final case class FileSystemFailure(msg: String, cause: Throwable)    extends Exception with Fatal with Aggregate
+final case class AggregatedFatal(reasons: Seq[Fatal with Aggregate]) extends Exception with Fatal
 
 final case class Path(path: String)         extends AnyVal
 final case class RelativePath(path: String) extends AnyVal
@@ -30,6 +30,5 @@ final case class OperationFailure(msg: String, th: Throwable)
 final case class OperationResult(succeed: Long, errors: Vector[OperationFailure])
 
 object types {
-  type CREDS              = Map[(Account, Container), Secret]
-  type OPERATIONS_SUMMARY = Map[OperationDescription, OperationResult]
+  type CREDS = Map[(Account, Container), Secret]
 }

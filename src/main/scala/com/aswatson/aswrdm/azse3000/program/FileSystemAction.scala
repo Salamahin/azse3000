@@ -5,11 +5,11 @@ import cats.data.EitherT
 import com.aswatson.aswrdm.azse3000.expression.ActionInterpret
 import com.aswatson.aswrdm.azse3000.shared._
 
-class FileSystemAction[F[_]: Monad, T, K](
+class FileSystemAction[F[_]: Monad, B, K](
   paths: MapPath,
-  endpoint: Endpoint[F, T, K],
+  endpoint: Endpoint[F, B, K],
   par: Parallel[F],
-  fs: FileSystem[F, T, K]
+  fs: FileSystem[F, B, K]
 ) {
 
   import cats.instances.either._
@@ -18,10 +18,10 @@ class FileSystemAction[F[_]: Monad, T, K](
   import cats.syntax.bifunctor._
   import cats.syntax.functor._
 
-  private def forEachBlobIn[U](path: FullPath)(action: T => F[Either[OperationFailure, U]]) =
+  private def forEachBlobIn[U](path: FullPath)(action: B => F[Either[OperationFailure, U]]) =
     (for {
       container     <- EitherT.right[Fatal with Aggregate](endpoint.toContainer(path))
-      runActions    = fs.foreachBlob(container, path.relative) { par.traverseN(_)(action) }
+      runActions    = fs.foreachBlob(container, path.relative) { par.traverse(_)(action) }
       actionResults <- EitherT(runActions).leftWiden[Fatal with Aggregate]
 
       (failed, succeed) = actionResults.toVector.separate
@@ -76,7 +76,7 @@ class FileSystemAction[F[_]: Monad, T, K](
       }
     }
 
-  def evaluate(expression: Expression): F[Either[AggregatedFatals, Map[OperationDescription, OperationResult]]] =
+  def evaluate(expression: Expression): F[Either[AggregatedFatal, Map[OperationDescription, OperationResult]]] =
     for {
       interpreted <- ActionInterpret.interpret(expression)(Monad[F], fsActionInterpret)
       (failures, succeeds) = interpreted
@@ -85,5 +85,5 @@ class FileSystemAction[F[_]: Monad, T, K](
           case (descr, opsResults) => opsResults.map(descr -> _)
         }
         .separate
-    } yield if (failures.nonEmpty) Left(AggregatedFatals(failures)) else Right(succeeds.toMap)
+    } yield if (failures.nonEmpty) Left(AggregatedFatal(failures)) else Right(succeeds.toMap)
 }

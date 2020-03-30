@@ -1,30 +1,27 @@
 package com.aswatson.aswrdm.azse3000.program
 
-import cats.{Id, Monad}
-import com.aswatson.aswrdm.azse3000.program.ContinuableTest.{Continuation, ParId}
-import com.aswatson.aswrdm.azse3000.shared.Parallel
+import cats.Id
+import com.aswatson.aswrdm.azse3000.program.ContinuableTest.Continuation
 import org.scalatest.{FunSuite, Matchers}
+
+import scala.annotation.tailrec
 
 object ContinuableTest {
   case class Continuation(value: Int, next: Option[Continuation])
-
-  object ParId extends Parallel[Id] {
-    override def traverse[T, U](items: Seq[T])(action: T => Id[U]): Id[Seq[U]] = items.map(action)
-
-    override def traverseN[T, U](items: Seq[T])(action: T => Id[U]): Id[Seq[U]] = items.map(action)
-
-    override def zip[T, U](first: Id[T], second: Id[U]): (T, U) = (first, second)
-  }
 }
 
 class ContinuableTest extends FunSuite with Matchers {
+  import id._
+
   private def continuation(limit: Int): Continuation = {
-    def iter(more: Int, idx: Int): Option[Continuation] = {
-      if (more == 0) None
-      else Some(Continuation(idx, iter(more - 1, idx + 1)))
+
+    @tailrec
+    def iter(more: Int, prev: Option[Continuation]): Option[Continuation] = {
+      if (more == 0) prev
+      else iter(more - 1, Some(Continuation(more - 1, prev)))
     }
 
-    iter(limit, 0).get
+    iter(limit, None).get
   }
 
   private val continuable = new Continuable[Id] {}
@@ -34,8 +31,16 @@ class ContinuableTest extends FunSuite with Matchers {
       () => continuation(3),
       c => c.next,
       c => c.value
-    )(Monad[Id], ParId)
+    )
 
     (res: Seq[Int]) should contain inOrderOnly (0, 1, 2)
+  }
+
+  test("is stack safe") {
+    continuable.doAnd[Continuation, Int](
+      () => continuation(1000000),
+      c => c.next,
+      c => c.value
+    )
   }
 }

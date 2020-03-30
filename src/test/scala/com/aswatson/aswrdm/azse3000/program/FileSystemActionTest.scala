@@ -15,7 +15,7 @@ object FileSystemActionTest {
     import cats.syntax.either._
 
     private val _files: mutable.Map[IdContainer, ListBuffer[IdFile]] =
-      mutable.Map.empty.withDefault(ListBuffer.empty)
+      mutable.Map.empty.withDefaultValue(ListBuffer.empty)
 
     private val _badFiles: mutable.Set[IdFile]           = mutable.Set.empty
     private val _badContainers: mutable.Set[IdContainer] = mutable.Set.empty

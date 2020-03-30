@@ -5,23 +5,27 @@ import com.aswatson.aswrdm.azse3000.shared.{Action, And, Expression}
 
 import scala.language.higherKinds
 
-trait ActionInterpret[F[_], T] {
-  def run(term: Action): F[T]
+trait ActionInterpret[F[_], P, T] {
+  def run(term: Action[P]): F[T]
 }
 
 object ActionInterpret {
-  def interpret[F[_]: Monad, T](expression: Expression)(implicit int: ActionInterpret[F, T]) = {
+  private class ActionInterpretImpl[F[_]: Monad, P, T] {
     import cats.syntax.either._
     import cats.syntax.functor._
 
-    Monad[F]
-      .tailRecM((expression :: Nil, Vector.empty[T])) {
-        case (exps, acc) =>
-          exps match {
-            case Nil                      => Monad[F].pure(acc.asRight[(List[Expression], Vector[T])])
-            case (head: Action) :: tail   => int.run(head).map(x => (tail, acc :+ x).asLeft[Vector[T]])
-            case And(left, right) :: tail => Monad[F].pure((left :: right :: tail, acc).asLeft[Vector[T]])
-          }
-      }
+    def run(expression: Expression[P])(implicit int: ActionInterpret[F, P, T]) =
+      Monad[F]
+        .tailRecM((expression :: Nil, Vector.empty[T])) {
+          case (exps, acc) =>
+            exps match {
+              case Nil                       => Monad[F].pure(acc.asRight[(List[Expression[P]], Vector[T])])
+              case (head: Action[P]) :: tail => int.run(head).map(x => (tail, acc :+ x).asLeft[Vector[T]])
+              case And(left, right) :: tail  => Monad[F].pure((left :: right :: tail, acc).asLeft[Vector[T]])
+            }
+        }
   }
+
+  def interpret[F[_]: Monad, P, T](expression: Expression[P])(implicit int: ActionInterpret[F, P, T]): F[Vector[T]] =
+    new ActionInterpretImpl[F, P, T].run(expression)
 }

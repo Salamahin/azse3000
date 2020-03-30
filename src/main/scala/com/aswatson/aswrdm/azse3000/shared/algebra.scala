@@ -5,16 +5,12 @@ trait Prompt[F[_]] {
 }
 
 trait Parse[F[_]] {
-  def toExpression(prompted: Command): F[Either[InvalidCommand, Expression]]
-  def toFullPath(inputPath: Path): F[Either[MalformedPath, FullPath]]
+  def toExpression(prompted: Command): F[Either[InvalidCommand, Expression[Path]]]
+  def toFullPath(inputPath: Path): F[Either[MalformedPath, ParsedPath]]
 }
 
 trait CommandSyntax[F[_]] {
   def desugar(cmd: Command): F[Command]
-}
-
-trait MapPath {
-  def map(p: Path): FullPath
 }
 
 trait Vault[F[_]] {
@@ -22,11 +18,12 @@ trait Vault[F[_]] {
 }
 
 trait Endpoint[F[_], B, K] {
-  def toBlob(p: FullPath): F[B]
-  def toContainer(p: FullPath): F[K]
+  def toBlob(p: ParsedPath): F[B]
+  def toContainer(p: ParsedPath): F[K]
 
   def showBlob(p: B): F[String]
   def showContainer(p: K): F[String]
+  def showPath(p: ParsedPath): F[String]
 }
 
 trait Parallel[F[_]] {

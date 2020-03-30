@@ -6,7 +6,6 @@ import com.aswatson.aswrdm.azse3000.expression.ActionInterpret
 import com.aswatson.aswrdm.azse3000.shared._
 
 class FileSystemAction[F[_]: Monad, B, K](
-  paths: MapPath,
   endpoint: Endpoint[F, B, K],
   par: Parallel[F],
   fs: FileSystem[F, B, K]
@@ -16,9 +15,10 @@ class FileSystemAction[F[_]: Monad, B, K](
   import cats.instances.vector._
   import cats.syntax.alternative._
   import cats.syntax.bifunctor._
+  import cats.syntax.flatMap._
   import cats.syntax.functor._
 
-  private def forEachBlobIn[U](path: FullPath)(action: B => F[Either[OperationFailure, U]]) =
+  private def forEachBlobIn[U](path: ParsedPath)(action: B => F[Either[OperationFailure, U]]) =
     (for {
       container     <- EitherT.right[Fatal with Aggregate](endpoint.toContainer(path))
       runActions    = fs.foreachBlob(container, path.relative) { par.traverse(_)(action) }
@@ -27,14 +27,14 @@ class FileSystemAction[F[_]: Monad, B, K](
       (failed, succeed) = actionResults.toVector.separate
     } yield OperationResult(succeed.size, failed)).value
 
-  private def copyBlobs(from: FullPath, to: FullPath) = forEachBlobIn(from) { fromBlob =>
+  private def copyBlobs(from: ParsedPath, to: ParsedPath) = forEachBlobIn(from) { fromBlob =>
     (for {
       toBlob <- EitherT.right[OperationFailure](endpoint.toBlob(to.resolve(from.relative)))
       _      <- EitherT(fs.copyContent(fromBlob, toBlob))
     } yield ()).value
   }
 
-  private def moveBlobs(from: FullPath, to: FullPath) = forEachBlobIn(from) { fromBlob =>
+  private def moveBlobs(from: ParsedPath, to: ParsedPath) = forEachBlobIn(from) { fromBlob =>
     (for {
       toBlob <- EitherT.right[OperationFailure](endpoint.toBlob(to.resolve(from.relative)))
       _      <- EitherT(fs.copyContent(fromBlob, toBlob))
@@ -42,43 +42,45 @@ class FileSystemAction[F[_]: Monad, B, K](
     } yield ()).value
   }
 
-  private def removeBlobs(path: FullPath) = forEachBlobIn(path) { fs.remove }
+  private def removeBlobs(path: ParsedPath) = forEachBlobIn(path) { fs.remove }
 
-  private val fsActionInterpret =
-    new ActionInterpret[F, Seq[(OperationDescription, Either[Fatal with Aggregate, OperationResult])]] {
-      override def run(term: Action) = term match {
+  private val runFsAction =
+    new ActionInterpret[F, ParsedPath, Seq[(OperationDescription, Either[Fatal with Aggregate, OperationResult])]] {
+      override def run(term: Action[ParsedPath]) = term match {
 
         case Copy(fromPaths, to) =>
           par.traverse(fromPaths) { from =>
             for {
-              ops      <- copyBlobs(paths.map(from), paths.map(to))
-              showFrom = from.path
-              showTo   = to.path
+              ops      <- copyBlobs(from, to)
+              showFrom <- endpoint.showPath(from)
+              showTo   <- endpoint.showPath(to)
             } yield OperationDescription(s"Copy from $showFrom to $showTo") -> ops
           }
 
         case Move(fromPaths, to) =>
           par.traverse(fromPaths) { from =>
             for {
-              ops      <- moveBlobs(paths.map(from), paths.map(to))
-              showFrom = from.path
-              showTo   = to.path
+              ops      <- moveBlobs(from, to)
+              showFrom <- endpoint.showPath(from)
+              showTo   <- endpoint.showPath(to)
             } yield OperationDescription(s"Move from $showFrom to $showTo") -> ops
           }
 
         case Remove(fromPaths) =>
           par.traverse(fromPaths) { from =>
             for {
-              ops      <- removeBlobs(paths.map(from))
-              showFrom = from.path
+              ops      <- removeBlobs(from)
+              showFrom <- endpoint.showPath(from)
             } yield OperationDescription(s"Remove from $showFrom") -> ops
           }
       }
     }
 
-  def evaluate(expression: Expression): F[Either[AggregatedFatal, Map[OperationDescription, OperationResult]]] =
+  def evaluate(
+    expression: Expression[ParsedPath]
+  ): F[Either[AggregatedFatal, Map[OperationDescription, OperationResult]]] =
     for {
-      interpreted <- ActionInterpret.interpret(expression)(Monad[F], fsActionInterpret)
+      interpreted <- ActionInterpret.interpret(expression)(Monad[F], runFsAction)
       (failures, succeeds) = interpreted
         .flatten
         .map {

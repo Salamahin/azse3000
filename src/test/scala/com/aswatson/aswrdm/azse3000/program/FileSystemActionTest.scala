@@ -19,7 +19,7 @@ object FileSystemActionTest {
     private val _badFiles: mutable.Set[ParsedPath]                = mutable.Set.empty
     private val _badContainers: mutable.Set[(Account, Container)] = mutable.Set.empty
 
-    def withFileIn(fp: ParsedPath) = {
+    def addBlob(fp: ParsedPath) = {
       addToFs(fp)
       this
     }
@@ -72,17 +72,19 @@ class FileSystemActionTest extends FunSuite with Matchers {
     fs
   )
 
-  test("can cp blob") {
-    val source  = ParsedPath(Account("a1"), Container("c1"), RelativePath("a/b/c"))
-    val destination  = ParsedPath(Account("a1"), Container("c1"), RelativePath("a/b"))
-    val expected = ParsedPath(Account("a2"), Container("c2"), RelativePath("a/b/c"))
+  test("relativize paths") {
+    val s1 = ParsedPath(Account("a1"), Container("c1"), RelativePath("a/b/c"))
+    val d1 = ParsedPath(Account("a2"), Container("c2"), RelativePath("d/e"))
+    val e1 = ParsedPath(Account("a2"), Container("c2"), RelativePath("d/e/c"))
 
     val fs = (new InMemoryIdFileSystem)
-      .withFileIn(source)
+      .addBlob(s1)
 
-    val evaluated = actionsOn(fs).evaluate(Copy(source :: Nil, destination))
+    val evaluated = actionsOn(fs).evaluate(
+      Copy(s1 :: Nil, d1)
+    )
 
     evaluated should be('right)
-    fs.files should contain only (source, expected)
+    fs.files should contain only (s1, e1)
   }
 }

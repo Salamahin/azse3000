@@ -29,14 +29,14 @@ class FileSystemAction[F[_]: Monad, B, K](
 
   private def copyBlobs(from: ParsedPath, to: ParsedPath) = forEachBlobIn(from) { fromBlob =>
     (for {
-      toBlob <- EitherT.right[OperationFailure](endpoint.toBlob(to.resolve(from.relative)))
+      toBlob <- EitherT.right[OperationFailure](endpoint.locate(fromBlob, from, to))
       _      <- EitherT(fs.copyContent(fromBlob, toBlob))
     } yield ()).value
   }
 
   private def moveBlobs(from: ParsedPath, to: ParsedPath) = forEachBlobIn(from) { fromBlob =>
     (for {
-      toBlob <- EitherT.right[OperationFailure](endpoint.toBlob(to.resolve(from.relative)))
+      toBlob <- EitherT.right[OperationFailure](endpoint.locate(fromBlob, from, to))
       _      <- EitherT(fs.copyContent(fromBlob, toBlob))
       _      <- EitherT(fs.remove(fromBlob))
     } yield ()).value

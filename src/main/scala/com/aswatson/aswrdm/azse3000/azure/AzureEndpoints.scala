@@ -12,10 +12,10 @@ class AzureEndpoints[F[_]: Monad](creds: CREDS) extends Endpoint[F, CloudBlockBl
   private def parsedPathToUri(p: ParsedPath) =
     s"https://${p.account.name}.blob.core.windows.net/${p.container.name}/${p.relative.path}"
 
-  override def toBlob(p: ParsedPath): F[CloudBlockBlob] = Monad[F].pure {
-    val uri = URI.create(parsedPathToUri(p))
-    new CloudBlockBlob(uri, new StorageCredentialsSharedAccessSignature(creds(p.account, p.container).secret))
-  }
+//  override def toBlob(p: ParsedPath): F[CloudBlockBlob] = Monad[F].pure {
+//    val uri = URI.create(parsedPathToUri(p))
+//    new CloudBlockBlob(uri, new StorageCredentialsSharedAccessSignature(creds(p.account, p.container).secret))
+//  }
 
   override def toContainer(p: ParsedPath): F[CloudBlobContainer] = Monad[F].pure {
     val uri = URI.create(s"https://${p.account.name}.blob.core.windows.net/${p.container.name}")
@@ -27,4 +27,9 @@ class AzureEndpoints[F[_]: Monad](creds: CREDS) extends Endpoint[F, CloudBlockBl
   override def showContainer(p: CloudBlobContainer): F[String] = Monad[F].pure { p.getUri.toString }
 
   override def showPath(p: ParsedPath): F[String] = Monad[F].pure { parsedPathToUri(p) }
+
+  override def locate(blob: CloudBlockBlob, source: ParsedPath, dest: ParsedPath): F[CloudBlockBlob] = {
+    ???
+
+  }
 }

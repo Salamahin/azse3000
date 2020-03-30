@@ -44,7 +44,7 @@ class UserInteraction[F[_]: Monad: Applicative](
     } yield Either.cond(
       parsingFailures.isEmpty,
       parsed.toMap,
-      Failure(parsingFailures)
+      AggregatedFatals(parsingFailures)
     )
 
   private def getCreds(paths: Vector[FullPath]) = {
@@ -65,11 +65,11 @@ class UserInteraction[F[_]: Monad: Applicative](
 
   def run() =
     for {
-      rawCommand         <- EitherT.right[Failure](prompt.command)
-      desugaredCommand   <- EitherT.right[Failure](syntax.desugar(rawCommand))
-      parsedExpression   <- EitherT(parse.toExpression(desugaredCommand)).leftMap(c => Failure(c :: Nil))
-      inputPaths         <- EitherT.right[Failure](getPaths(parsedExpression))
+      rawCommand         <- EitherT.right[AggregatedFatals](prompt.command)
+      desugaredCommand   <- EitherT.right[AggregatedFatals](syntax.desugar(rawCommand))
+      parsedExpression   <- EitherT(parse.toExpression(desugaredCommand)).leftMap(c => AggregatedFatals(c :: Nil))
+      inputPaths         <- EitherT.right[AggregatedFatals](getPaths(parsedExpression))
       parsedPaths        <- EitherT(parsePaths(inputPaths))
-      creds              <- EitherT.right[Failure](getCreds(parsedPaths.values.toVector))
+      creds              <- EitherT.right[AggregatedFatals](getCreds(parsedPaths.values.toVector))
     } yield (parsedExpression, parsedPaths, creds)
 }

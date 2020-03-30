@@ -1,11 +1,11 @@
 package com.aswatson.aswrdm.azse3000.shared
 
-sealed trait Issue
+sealed trait Fatal
 sealed trait Aggregate
-final case class InvalidCommand(msg: String)                      extends Exception with Issue with Aggregate
-final case class MalformedPath(msg: String)                       extends Exception with Issue with Aggregate
-final case class FileSystemFailure(msg: String, cause: Throwable) extends Exception with Issue with Aggregate
-final case class Failure(reasons: Seq[Issue with Aggregate])      extends Exception with Issue
+final case class InvalidCommand(msg: String)                          extends Exception with Fatal with Aggregate
+final case class MalformedPath(msg: String)                           extends Exception with Fatal with Aggregate
+final case class FileSystemFailure(msg: String, cause: Throwable)     extends Exception with Fatal with Aggregate
+final case class AggregatedFatals(reasons: Seq[Fatal with Aggregate]) extends Exception with Fatal
 
 final case class Path(path: String)         extends AnyVal
 final case class RelativePath(path: String) extends AnyVal
@@ -26,8 +26,8 @@ final case class Copy(from: Seq[Path], to: Path)          extends Expression wit
 final case class Move(from: Seq[Path], to: Path)          extends Expression with Action
 final case class Remove(from: Seq[Path])                  extends Expression with Action
 
-final case class FileOperationFailed(file: FullPath, th: Throwable)
-final case class OperationResult(succeed: Long, errors: Vector[FileOperationFailed])
+final case class OperationFailure(msg: String, th: Throwable)
+final case class OperationResult(succeed: Long, errors: Vector[OperationFailure])
 
 object types {
   type CREDS              = Map[(Account, Container), Secret]

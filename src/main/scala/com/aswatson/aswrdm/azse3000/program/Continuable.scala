@@ -3,14 +3,15 @@ package com.aswatson.aswrdm.azse3000.program
 import cats.Monad
 import com.aswatson.aswrdm.azse3000.shared.Parallel
 
-trait Continuable[F[_], C, T] {
+trait Continuable[F[_]] {
 
-  import cats.implicits._
-
-  def doAnd(init: () => F[C], next: C => F[Option[C]], map: C => F[T])(
+  def doAnd[C, T](init: () => F[C], next: C => F[Option[C]], map: C => F[T])(
     implicit monad: Monad[F],
     par: Parallel[F]
   ): F[Seq[T]] = {
+    import cats.syntax.flatMap._
+    import cats.syntax.either._
+    import cats.syntax.functor._
 
     init()
       .flatMap { ct =>

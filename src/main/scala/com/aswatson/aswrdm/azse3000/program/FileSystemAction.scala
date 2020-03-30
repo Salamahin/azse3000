@@ -18,25 +18,25 @@ class FileSystemAction[F[_]: Monad, T, K](
   import cats.syntax.bifunctor._
   import cats.syntax.functor._
 
-  private def forEachBlobIn[U](path: FullPath)(action: T => F[Either[FileOperationFailed, U]]) =
+  private def forEachBlobIn[U](path: FullPath)(action: T => F[Either[OperationFailure, U]]) =
     (for {
-      container     <- EitherT.right[Issue with Aggregate](endpoint.toContainer(path))
+      container     <- EitherT.right[Fatal with Aggregate](endpoint.toContainer(path))
       runActions    = fs.foreachBlob(container, path.relative) { par.traverseN(_)(action) }
-      actionResults <- EitherT(runActions).leftWiden[Issue with Aggregate]
+      actionResults <- EitherT(runActions).leftWiden[Fatal with Aggregate]
 
       (failed, succeed) = actionResults.toVector.separate
     } yield OperationResult(succeed.size, failed)).value
 
   private def copyBlobs(from: FullPath, to: FullPath) = forEachBlobIn(from) { fromBlob =>
     (for {
-      toBlob <- EitherT.right[FileOperationFailed](endpoint.toBlob(to.resolve(from.relative)))
+      toBlob <- EitherT.right[OperationFailure](endpoint.toBlob(to.resolve(from.relative)))
       _      <- EitherT(fs.copyContent(fromBlob, toBlob))
     } yield ()).value
   }
 
   private def moveBlobs(from: FullPath, to: FullPath) = forEachBlobIn(from) { fromBlob =>
     (for {
-      toBlob <- EitherT.right[FileOperationFailed](endpoint.toBlob(to.resolve(from.relative)))
+      toBlob <- EitherT.right[OperationFailure](endpoint.toBlob(to.resolve(from.relative)))
       _      <- EitherT(fs.copyContent(fromBlob, toBlob))
       _      <- EitherT(fs.remove(fromBlob))
     } yield ()).value
@@ -45,7 +45,7 @@ class FileSystemAction[F[_]: Monad, T, K](
   private def removeBlobs(path: FullPath) = forEachBlobIn(path) { fs.remove }
 
   private val fsActionInterpret =
-    new ActionInterpret[F, Seq[(OperationDescription, Either[Issue with Aggregate, OperationResult])]] {
+    new ActionInterpret[F, Seq[(OperationDescription, Either[Fatal with Aggregate, OperationResult])]] {
       override def run(term: Action) = term match {
 
         case Copy(fromPaths, to) =>
@@ -76,7 +76,7 @@ class FileSystemAction[F[_]: Monad, T, K](
       }
     }
 
-  def evaluate(expression: Expression): F[Either[Failure, Map[OperationDescription, OperationResult]]] =
+  def evaluate(expression: Expression): F[Either[AggregatedFatals, Map[OperationDescription, OperationResult]]] =
     for {
       interpreted <- ActionInterpret.interpret(expression)(Applicative[F], fsActionInterpret)
       (failures, succeeds) = interpreted
@@ -85,5 +85,5 @@ class FileSystemAction[F[_]: Monad, T, K](
           case (descr, opsResults) => opsResults.map(descr -> _)
         }
         .separate
-    } yield if (failures.nonEmpty) Left(Failure(failures)) else Right(succeeds.toMap)
+    } yield if (failures.nonEmpty) Left(AggregatedFatals(failures)) else Right(succeeds.toMap)
 }

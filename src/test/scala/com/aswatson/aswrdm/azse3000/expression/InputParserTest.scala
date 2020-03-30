@@ -9,9 +9,9 @@ class InputParserTest extends FunSuite with Matchers {
   import InputParserTest._
 
   private val primitives = Seq(
-    Command("cp a1 a2 a3 b") -> Copy(Seq("a1", "a2", "a3").map(InputPath), InputPath("b")),
-    Command("mv a1 a2 a3 b") -> Move(Seq("a1", "a2", "a3").map(InputPath), InputPath("b")),
-    Command("rm a1 a2 a3")   -> Remove(Seq("a1", "a2", "a3").map(InputPath))
+    Command("cp a1 a2 a3 b") -> Copy(Seq("a1", "a2", "a3").map(Path), Path("b")),
+    Command("mv a1 a2 a3 b") -> Move(Seq("a1", "a2", "a3").map(Path), Path("b")),
+    Command("rm a1 a2 a3")   -> Remove(Seq("a1", "a2", "a3").map(Path))
   )
 
   primitives.foreach {
@@ -40,7 +40,7 @@ class InputParserTest extends FunSuite with Matchers {
 }
 
 object InputParserTest {
-  implicit val print: ActionInterpret[Id, InputPath, String] = {
+  implicit val print: ActionInterpret[Id, String] = {
     case Copy(sources, to) => s"cp ${sources.map(_.path).mkString(", ")} to ${to.path}"
     case Move(sources, to) => s"mv ${sources.map(_.path).mkString(", ")} to ${to.path}"
     case Remove(sources)   => s"rm ${sources.map(_.path).mkString(", ")}"

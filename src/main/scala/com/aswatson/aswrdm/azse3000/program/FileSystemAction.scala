@@ -1,6 +1,6 @@
 package com.aswatson.aswrdm.azse3000.program
 
-import cats.Monad
+import cats.{Applicative, Monad}
 import cats.data.EitherT
 import com.aswatson.aswrdm.azse3000.expression.ActionInterpret
 import com.aswatson.aswrdm.azse3000.shared._
@@ -44,7 +44,7 @@ class FileSystemAction[F[_]: Monad, T, K](
 
   private def removeBlobs(path: FullPath) = forEachBlobIn(path) { fs.remove }
 
-  private implicit val fsActionInterpret =
+  private val fsActionInterpret =
     new ActionInterpret[F, Seq[(OperationDescription, Either[Issue with Aggregate, OperationResult])]] {
       override def run(term: Action) = term match {
 
@@ -78,7 +78,7 @@ class FileSystemAction[F[_]: Monad, T, K](
 
   def evaluate(expression: Expression): F[Either[Failure, Map[OperationDescription, OperationResult]]] =
     for {
-      interpreted <- ActionInterpret.interpret(expression)
+      interpreted <- ActionInterpret.interpret(expression)(Applicative[F], fsActionInterpret)
       (failures, succeeds) = interpreted
         .flatten
         .map {

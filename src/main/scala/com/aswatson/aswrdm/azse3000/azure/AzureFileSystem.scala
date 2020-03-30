@@ -41,7 +41,7 @@ class AzureFileSystem[F[_]: Monad: Parallel](batchSize: Int)(
         }
         .leftSemiflatMap { e =>
           endpoint
-            .showContainer(cont)
+            .containerPath(cont)
             .map(show => FileSystemFailure(s"Failed to perform batch operation in $show ($prefix)", e))
         }
         .value
@@ -82,7 +82,7 @@ class AzureFileSystem[F[_]: Monad: Parallel](batchSize: Int)(
         copy.asRight[OperationFailure]
       } catch {
         case e: Throwable =>
-          val message = s"Failed to copy content of ${endpoint.showBlob(fromBlob)} to ${endpoint.showBlob(toBlob)}"
+          val message = s"Failed to copy content of ${endpoint.blobPath(fromBlob)} to ${endpoint.blobPath(toBlob)}"
           OperationFailure(message, e).asLeft[Unit]
       }
     }
@@ -93,7 +93,7 @@ class AzureFileSystem[F[_]: Monad: Parallel](batchSize: Int)(
       blob.delete().asRight[OperationFailure]
     } catch {
       case e: Throwable =>
-        val message = s"Failed to remove ${endpoint.showBlob(blob)}"
+        val message = s"Failed to remove ${endpoint.blobPath(blob)}"
         OperationFailure(message, e).asLeft[Unit]
     }
   }

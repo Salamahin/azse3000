@@ -18,11 +18,11 @@ trait Vault[F[_]] {
 }
 
 trait Endpoint[F[_], B, K] {
-  def locate(source: B, from: ParsedPath, to: ParsedPath): F[B]
+  def toBlob(p: ParsedPath): F[B]
   def toContainer(p: ParsedPath): F[K]
 
-  def showBlob(p: B): F[String]
-  def showContainer(p: K): F[String]
+  def blobPath(p: B): F[Path]
+  def containerPath(p: K): F[Path]
   def showPath(p: ParsedPath): F[String]
 }
 

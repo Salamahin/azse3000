@@ -15,8 +15,17 @@ class FileSystemAction[F[_]: Monad, B, K](
   import cats.instances.vector._
   import cats.syntax.alternative._
   import cats.syntax.bifunctor._
-  import cats.syntax.flatMap._
   import cats.syntax.functor._
+  import cats.syntax.flatMap._
+
+  private def relativize(what: B, from: ParsedPath, to: ParsedPath): F[ParsedPath] = {
+    for {
+      p     <- endpoint.blobPath(what)
+      begin = p.path.indexOf(from.relative.path) + from.relative.path.length
+      relative = p.path.substring(begin + 1)
+      newRelative = s"${to.relative.path}/${relative}"
+    } yield to.copy(relative = RelativePath(newRelative))
+  }
 
   private def forEachBlobIn[U](path: ParsedPath)(action: B => F[Either[OperationFailure, U]]) =
     (for {
@@ -29,16 +38,18 @@ class FileSystemAction[F[_]: Monad, B, K](
 
   private def copyBlobs(from: ParsedPath, to: ParsedPath) = forEachBlobIn(from) { fromBlob =>
     (for {
-      toBlob <- EitherT.right[OperationFailure](endpoint.locate(fromBlob, from, to))
-      _      <- EitherT(fs.copyContent(fromBlob, toBlob))
+      toBlobPath <- EitherT.right[OperationFailure](relativize(fromBlob, from, to))
+      toBlob     <- EitherT.right[OperationFailure](endpoint.toBlob(toBlobPath))
+      _          <- EitherT(fs.copyContent(fromBlob, toBlob))
     } yield ()).value
   }
 
   private def moveBlobs(from: ParsedPath, to: ParsedPath) = forEachBlobIn(from) { fromBlob =>
     (for {
-      toBlob <- EitherT.right[OperationFailure](endpoint.locate(fromBlob, from, to))
-      _      <- EitherT(fs.copyContent(fromBlob, toBlob))
-      _      <- EitherT(fs.remove(fromBlob))
+      toBlobPath <- EitherT.right[OperationFailure](relativize(fromBlob, from, to))
+      toBlob     <- EitherT.right[OperationFailure](endpoint.toBlob(toBlobPath))
+      _          <- EitherT(fs.copyContent(fromBlob, toBlob))
+      _          <- EitherT(fs.remove(fromBlob))
     } yield ()).value
   }
 

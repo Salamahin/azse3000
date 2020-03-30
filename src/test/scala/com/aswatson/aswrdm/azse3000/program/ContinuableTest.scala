@@ -11,8 +11,6 @@ object ContinuableTest {
 }
 
 class ContinuableTest extends FunSuite with Matchers {
-  import id._
-
   private def continuation(limit: Int): Continuation = {
 
     @tailrec

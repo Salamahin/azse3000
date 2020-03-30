@@ -9,22 +9,7 @@ final case class AggregatedFatal(reasons: Seq[Fatal with Aggregate]) extends Exc
 
 final case class Path(path: String)         extends AnyVal
 final case class RelativePath(path: String) extends AnyVal
-final case class ParsedPath(account: Account, container: Container, relative: RelativePath) {
-  def resolve(other: RelativePath) = {
-
-    def iter(thisPaths: List[String], thatPaths: List[String], acc: List[String]): List[String] = {
-      (thisPaths, thatPaths) match {
-        case (Nil, that) => acc ++ that
-        case (thisHead :: thisTail, thatHead :: thatTail) if thisHead == thatHead =>
-          iter(thisTail, thatTail, acc :+ thisHead)
-      }
-    }
-
-    val thisPaths = relative.path.split("/").toList
-    val thatPaths = other.path.split("/").toList
-    ParsedPath(account, container, RelativePath(iter(thisPaths, thatPaths, Nil).mkString("/")))
-  }
-}
+final case class ParsedPath(account: Account, container: Container, relative: RelativePath)
 
 final case class Command(cmd: String)                      extends AnyVal
 final case class Account(name: String)                     extends AnyVal

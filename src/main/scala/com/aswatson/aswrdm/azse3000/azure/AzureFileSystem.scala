@@ -8,7 +8,6 @@ import com.microsoft.azure.storage.blob.{CloudBlobContainer, CloudBlockBlob, Lis
 import com.microsoft.azure.storage.{ResultContinuation, ResultSegment}
 
 class AzureFileSystem[F[_]: Monad: Parallel](batchSize: Int)(
-  implicit
   endpoint: Endpoint[F, CloudBlockBlob, CloudBlobContainer],
   continuable: Continuable[F]
 ) extends FileSystem[F, CloudBlockBlob, CloudBlobContainer] {

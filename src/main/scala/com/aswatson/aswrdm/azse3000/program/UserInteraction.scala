@@ -5,7 +5,7 @@ import cats.{Applicative, Monad}
 import com.aswatson.aswrdm.azse3000.expression.ActionInterpret
 import com.aswatson.aswrdm.azse3000.shared._
 
-class UserInteraction[F[_]: Monad: Applicative](
+class UserInteraction[F[_]: Monad](
   implicit
   prompt: Prompt[F],
   syntax: CommandSyntax[F],
@@ -13,11 +13,11 @@ class UserInteraction[F[_]: Monad: Applicative](
   vault: Vault[F]
 ) {
   import cats.instances.either._
-  import cats.instances.vector._
   import cats.instances.tuple._
+  import cats.instances.vector._
   import cats.syntax.alternative._
-  import cats.syntax.traverse._
   import cats.syntax.functor._
+  import cats.syntax.traverse._
 
   private def getPaths(expr: Expression) = {
     val collectPaths = new ActionInterpret[F, Seq[Path]] {
@@ -28,7 +28,7 @@ class UserInteraction[F[_]: Monad: Applicative](
       }
     }
 
-    ActionInterpret.interpret(expr)(Applicative[F], collectPaths).map(_.flatten)
+    ActionInterpret.interpret(expr)(Monad[F], collectPaths).map(_.flatten)
   }
 
   private def parsePaths(paths: Vector[Path]) =
@@ -65,11 +65,11 @@ class UserInteraction[F[_]: Monad: Applicative](
 
   def run() =
     for {
-      rawCommand         <- EitherT.right[AggregatedFatals](prompt.command)
-      desugaredCommand   <- EitherT.right[AggregatedFatals](syntax.desugar(rawCommand))
-      parsedExpression   <- EitherT(parse.toExpression(desugaredCommand)).leftMap(c => AggregatedFatals(c :: Nil))
-      inputPaths         <- EitherT.right[AggregatedFatals](getPaths(parsedExpression))
-      parsedPaths        <- EitherT(parsePaths(inputPaths))
-      creds              <- EitherT.right[AggregatedFatals](getCreds(parsedPaths.values.toVector))
+      rawCommand       <- EitherT.right[AggregatedFatals](prompt.command)
+      desugaredCommand <- EitherT.right[AggregatedFatals](syntax.desugar(rawCommand))
+      parsedExpression <- EitherT(parse.toExpression(desugaredCommand)).leftMap(c => AggregatedFatals(c :: Nil))
+      inputPaths       <- EitherT.right[AggregatedFatals](getPaths(parsedExpression))
+      parsedPaths      <- EitherT(parsePaths(inputPaths))
+      creds            <- EitherT.right[AggregatedFatals](getCreds(parsedPaths.values.toVector))
     } yield (parsedExpression, parsedPaths, creds)
 }

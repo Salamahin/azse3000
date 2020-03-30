@@ -1,6 +1,6 @@
 package com.aswatson.aswrdm.azse3000.program
 
-import cats.{Applicative, Monad}
+import cats.Monad
 import cats.data.EitherT
 import com.aswatson.aswrdm.azse3000.expression.ActionInterpret
 import com.aswatson.aswrdm.azse3000.shared._
@@ -78,7 +78,7 @@ class FileSystemAction[F[_]: Monad, T, K](
 
   def evaluate(expression: Expression): F[Either[AggregatedFatals, Map[OperationDescription, OperationResult]]] =
     for {
-      interpreted <- ActionInterpret.interpret(expression)(Applicative[F], fsActionInterpret)
+      interpreted <- ActionInterpret.interpret(expression)(Monad[F], fsActionInterpret)
       (failures, succeeds) = interpreted
         .flatten
         .map {

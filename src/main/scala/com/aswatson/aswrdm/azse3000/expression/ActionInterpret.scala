@@ -1,9 +1,8 @@
 package com.aswatson.aswrdm.azse3000.expression
 
-import cats.Applicative
+import cats.Monad
 import com.aswatson.aswrdm.azse3000.shared.{Action, And, Expression}
 
-import scala.annotation.tailrec
 import scala.language.higherKinds
 
 trait ActionInterpret[F[_], T] {
@@ -11,21 +10,18 @@ trait ActionInterpret[F[_], T] {
 }
 
 object ActionInterpret {
-  def interpret[F[_]: Applicative, T](
-    expression: Expression
-  )(implicit int: ActionInterpret[F, T]) = {
+  def interpret[F[_]: Monad, T](expression: Expression)(implicit int: ActionInterpret[F, T]) = {
+    import cats.syntax.either._
+    import cats.syntax.functor._
 
-    //todo tailrecm
-    @tailrec
-    def iter(expressions: List[Expression], acc: Vector[F[T]]): Vector[F[T]] = {
-      expressions match {
-        case Nil                      => acc
-        case (head: Action) :: tail   => iter(tail, acc :+ int.run(head))
-        case And(left, right) :: tail => iter(left :: right :: tail, acc)
+    Monad[F]
+      .tailRecM((expression :: Nil, Vector.empty[T])) {
+        case (exps, acc) =>
+          exps match {
+            case Nil                      => Monad[F].pure(acc.asRight[(List[Expression], Vector[T])])
+            case (head: Action) :: tail   => int.run(head).map(x => (tail, acc :+ x).asLeft[Vector[T]])
+            case And(left, right) :: tail => Monad[F].pure((left :: right :: tail, acc).asLeft[Vector[T]])
+          }
       }
-    }
-
-    import cats.implicits._
-    iter(expression :: Nil, Vector.empty).traverse(identity)
   }
 }

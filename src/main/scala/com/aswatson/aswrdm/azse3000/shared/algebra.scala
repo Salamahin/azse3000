@@ -32,11 +32,11 @@ trait Parallel[F[_]] {
 }
 
 trait FileSystem[F[_], T, K] {
-  def copyContent(fromBlob: T, toBlob: T): F[Either[OperationFailure, Unit]]
+  def copyContent(fromBlob: T, toBlob: T): F[Either[Throwable, Unit]]
 
-  def remove(blob: T): F[Either[OperationFailure, Unit]]
+  def remove(blob: T): F[Either[Throwable, Unit]]
 
-  def foreachBlob[U](container: K, prefix: RelativePath)(
+  def foreachBlob[U](container: K, prefix: Prefix)(
     action: Seq[T] => F[Seq[U]]
-  ): F[Either[FileSystemFailure, Seq[U]]]
+  ): F[Either[Throwable, Seq[U]]]
 }

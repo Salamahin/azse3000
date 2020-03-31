@@ -15,32 +15,57 @@ class FileSystemAction[F[_]: Monad, B, K](
   import cats.instances.vector._
   import cats.syntax.alternative._
   import cats.syntax.bifunctor._
-  import cats.syntax.functor._
   import cats.syntax.flatMap._
+  import cats.syntax.functor._
 
-  private def relativize(what: B, from: ParsedPath, to: ParsedPath): F[ParsedPath] = {
+  private def relativize(blob: B, from: ParsedPath, to: ParsedPath): F[ParsedPath] = {
+    def remainedPaths(blobPaths: List[String], relativeToPaths: List[String]): List[String] =
+      (blobPaths, relativeToPaths) match {
+        case (remains, Nil)                                           => remains
+        case (bpHead :: bpTail, rpHead :: rpTail) if bpHead == rpHead => remainedPaths(bpTail, rpTail)
+        case (_ :: bpTail, relative)                                  => remainedPaths(bpTail, relative)
+      }
+
     for {
-      p     <- endpoint.blobPath(what)
-      begin = p.path.indexOf(from.relative.path) + from.relative.path.length
-      relative = p.path.substring(begin + 1)
-      newRelative = s"${to.relative.path}/${relative}"
-    } yield to.copy(relative = RelativePath(newRelative))
+      blobPath            <- endpoint.blobPath(blob)
+      blobPathNames       = blobPath.path.split("/").toList
+      relativeToPathNames = from.prefix.path.split("/").toList
+      remainedPathNames   = remainedPaths(blobPathNames, relativeToPathNames)
+      toPathNames         = to.prefix.path.split("/")
+    } yield to.copy(prefix = Prefix((toPathNames ++ remainedPathNames).mkString("/")))
   }
 
   private def forEachBlobIn[U](path: ParsedPath)(action: B => F[Either[OperationFailure, U]]) =
     (for {
-      container     <- EitherT.right[Fatal with Aggregate](endpoint.toContainer(path))
-      runActions    = fs.foreachBlob(container, path.relative) { par.traverse(_)(action) }
-      actionResults <- EitherT(runActions).leftWiden[Fatal with Aggregate]
+      container <- EitherT.right[Fatal with Aggregate](endpoint.toContainer(path))
+      actionResults <- EitherT(fs.foreachBlob(container, path.prefix) { par.traverse(_)(action) })
+                        .leftSemiflatMap(e => containerListingFailure(container, path.prefix, e))
+                        .leftWiden[Fatal with Aggregate]
 
       (failed, succeed) = actionResults.toVector.separate
     } yield OperationResult(succeed.size, failed)).value
+
+  private def containerListingFailure(container: K, prefix: Prefix, cause: Throwable) =
+    for {
+      cont <- endpoint.containerPath(container)
+    } yield FileSystemFailure(s"Failed to perform listing in ${cont.path} (${prefix.path})", cause)
+
+  private def copyFailure(from: B, to: B, cause: Throwable) =
+    for {
+      fromBlobPath <- endpoint.blobPath(from)
+      toBlobPath   <- endpoint.blobPath(to)
+    } yield OperationFailure(s"Failed to copy content of ${fromBlobPath.path} to ${toBlobPath.path}", cause)
+
+  private def removeFailure(from: B, cause: Throwable) =
+    for {
+      fromBlobPath <- endpoint.blobPath(from)
+    } yield OperationFailure(s"Failed to remove ${fromBlobPath.path}", cause)
 
   private def copyBlobs(from: ParsedPath, to: ParsedPath) = forEachBlobIn(from) { fromBlob =>
     (for {
       toBlobPath <- EitherT.right[OperationFailure](relativize(fromBlob, from, to))
       toBlob     <- EitherT.right[OperationFailure](endpoint.toBlob(toBlobPath))
-      _          <- EitherT(fs.copyContent(fromBlob, toBlob))
+      _          <- EitherT(fs.copyContent(fromBlob, toBlob)).leftSemiflatMap(e => copyFailure(fromBlob, toBlob, e))
     } yield ()).value
   }
 
@@ -48,12 +73,16 @@ class FileSystemAction[F[_]: Monad, B, K](
     (for {
       toBlobPath <- EitherT.right[OperationFailure](relativize(fromBlob, from, to))
       toBlob     <- EitherT.right[OperationFailure](endpoint.toBlob(toBlobPath))
-      _          <- EitherT(fs.copyContent(fromBlob, toBlob))
-      _          <- EitherT(fs.remove(fromBlob))
+      _          <- EitherT(fs.copyContent(fromBlob, toBlob)).leftSemiflatMap(e => copyFailure(fromBlob, toBlob, e))
+      _          <- EitherT(fs.remove(fromBlob)).leftSemiflatMap(e => removeFailure(fromBlob, e))
     } yield ()).value
   }
 
-  private def removeBlobs(path: ParsedPath) = forEachBlobIn(path) { fs.remove }
+  private def removeBlobs(path: ParsedPath) = forEachBlobIn(path) { fromBlob =>
+    EitherT(fs.remove(fromBlob))
+      .leftSemiflatMap(e => removeFailure(fromBlob, e))
+      .value
+  }
 
   private val runFsAction =
     new ActionInterpret[F, ParsedPath, Seq[(OperationDescription, Either[Fatal with Aggregate, OperationResult])]] {

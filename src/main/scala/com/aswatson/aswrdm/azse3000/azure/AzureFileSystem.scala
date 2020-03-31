@@ -20,9 +20,9 @@ class AzureFileSystem[F[_]: Monad: Parallel](batchSize: Int)(
       for (xs <- acc.right; x <- e.right) yield x +: xs
     }
 
-  override def foreachBlob[U](cont: CloudBlobContainer, prefix: RelativePath)(
+  override def foreachBlob[U](cont: CloudBlobContainer, prefix: Prefix)(
     batchOperation: Seq[CloudBlockBlob] => F[Seq[U]]
-  ): F[Either[FileSystemFailure, Seq[U]]] = {
+  ): F[Either[Throwable, Seq[U]]] = {
 
     def continueListing(token: ResultContinuation) =
       EitherT
@@ -39,11 +39,6 @@ class AzureFileSystem[F[_]: Monad: Parallel](batchSize: Int)(
             )
           )
         }
-        .leftSemiflatMap { e =>
-          endpoint
-            .containerPath(cont)
-            .map(show => FileSystemFailure(s"Failed to perform batch operation in $show ($prefix)", e))
-        }
         .value
 
     def getBlobs(rs: ResultSegment[ListBlobItem]) = {
@@ -56,7 +51,7 @@ class AzureFileSystem[F[_]: Monad: Parallel](batchSize: Int)(
     }
 
     continuable
-      .doAnd[Either[FileSystemFailure, ResultSegment[ListBlobItem]], Either[FileSystemFailure, Seq[U]]](
+      .doAnd[Either[Throwable, ResultSegment[ListBlobItem]], Either[Throwable, Seq[U]]](
         () => continueListing(null), {
           case Right(segment) if segment.getHasMoreResults => continueListing(segment.getContinuationToken).map(Some(_))
           case _                                           => Monad[F].pure(None)
@@ -73,28 +68,24 @@ class AzureFileSystem[F[_]: Monad: Parallel](batchSize: Int)(
       .map(x => x.map(_.flatten))
   }
 
-  override def copyContent(fromBlob: CloudBlockBlob, toBlob: CloudBlockBlob): F[Either[OperationFailure, Unit]] = {
+  override def copyContent(fromBlob: CloudBlockBlob, toBlob: CloudBlockBlob): F[Either[Throwable, Unit]] = {
     import cats.syntax.either._
 
     Monad[F].pure {
       try {
         val copy: Unit = toBlob.startCopy(fromBlob, null, true, null, null, null, null)
-        copy.asRight[OperationFailure]
+        copy.asRight
       } catch {
-        case e: Throwable =>
-          val message = s"Failed to copy content of ${endpoint.blobPath(fromBlob)} to ${endpoint.blobPath(toBlob)}"
-          OperationFailure(message, e).asLeft[Unit]
+        case e: Throwable => e.asLeft
       }
     }
   }
 
-  override def remove(blob: CloudBlockBlob): F[Either[OperationFailure, Unit]] = Monad[F].pure {
+  override def remove(blob: CloudBlockBlob): F[Either[Throwable, Unit]] = Monad[F].pure {
     try {
-      blob.delete().asRight[OperationFailure]
+      blob.delete().asRight
     } catch {
-      case e: Throwable =>
-        val message = s"Failed to remove ${endpoint.blobPath(blob)}"
-        OperationFailure(message, e).asLeft[Unit]
+      case e: Throwable =>  e.asLeft
     }
   }
 }

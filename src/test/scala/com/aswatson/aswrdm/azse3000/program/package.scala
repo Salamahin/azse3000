@@ -15,12 +15,12 @@ package object program {
 
     str match {
       case pattern(container, account, relative) =>
-        ParsedPath(Account(account), Container(container), RelativePath(relative))
+        ParsedPath(Account(account), Container(container), Prefix(relative))
     }
   }
 
   implicit class ParsedPathOps(p: ParsedPath) {
-    def toPath = Path(s"${p.container.name}@${p.account.name}:/${p.relative.path}")
-    def show   = s"${p.container.name}@${p.account.name}:/${p.relative.path}"
+    def toPath = Path(s"${p.container.name}@${p.account.name}:/${p.prefix.path}")
+    def show   = s"${p.container.name}@${p.account.name}:/${p.prefix.path}"
   }
 }

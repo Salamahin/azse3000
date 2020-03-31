@@ -10,7 +10,7 @@ import com.microsoft.azure.storage.blob.{CloudBlobContainer, CloudBlockBlob}
 
 class AzureEndpoints[F[_]: Monad](creds: CREDS) extends Endpoint[F, CloudBlockBlob, CloudBlobContainer] {
   private def parsedPathToUri(p: ParsedPath) =
-    s"https://${p.account.name}.blob.core.windows.net/${p.container.name}/${p.relative.path}"
+    s"https://${p.account.name}.blob.core.windows.net/${p.container.name}/${p.prefix.path}"
 
   override def toBlob(p: ParsedPath): F[CloudBlockBlob] = Monad[F].pure {
     val uri = URI.create(parsedPathToUri(p))

@@ -7,9 +7,9 @@ final case class MalformedPath(msg: String)                          extends Exc
 final case class FileSystemFailure(msg: String, cause: Throwable)    extends Exception with Fatal with Aggregate
 final case class AggregatedFatal(reasons: Seq[Fatal with Aggregate]) extends Exception with Fatal
 
-final case class Path(path: String)         extends AnyVal
-final case class RelativePath(path: String) extends AnyVal
-final case class ParsedPath(account: Account, container: Container, relative: RelativePath)
+final case class Path(path: String)   extends AnyVal
+final case class Prefix(path: String) extends AnyVal
+final case class ParsedPath(account: Account, container: Container, prefix: Prefix)
 
 final case class Command(cmd: String)                      extends AnyVal
 final case class Account(name: String)                     extends AnyVal

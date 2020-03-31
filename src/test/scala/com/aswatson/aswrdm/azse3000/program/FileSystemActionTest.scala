@@ -3,7 +3,7 @@ package com.aswatson.aswrdm.azse3000.program
 import cats.Id
 import com.aswatson.aswrdm.azse3000.program.FileSystemActionTest.{IdEndpoint, InMemoryIdFileSystem}
 import com.aswatson.aswrdm.azse3000.shared._
-import org.scalatest.{FunSuite, Matchers}
+import org.scalatest.{BeforeAndAfterEach, FunSuite, Matchers}
 
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
@@ -11,12 +11,14 @@ import scala.collection.mutable.ListBuffer
 object FileSystemActionTest {
 
   class InMemoryIdFileSystem extends FileSystem[Id, ParsedPath, (Account, Container)] {
+
     import cats.syntax.either._
 
     private val _files: mutable.Map[(Account, Container), ListBuffer[ParsedPath]] =
       mutable.Map.empty.withDefaultValue(ListBuffer.empty)
 
-    private val _badFiles: mutable.Set[ParsedPath]                = mutable.Set.empty
+    private val _failedToCopyFiles: mutable.Set[ParsedPath]       = mutable.Set.empty
+    private val _failedToRemoveFiles: mutable.Set[ParsedPath]     = mutable.Set.empty
     private val _badContainers: mutable.Set[(Account, Container)] = mutable.Set.empty
 
     def addBlob(fp: ParsedPath) = {
@@ -24,29 +26,42 @@ object FileSystemActionTest {
       this
     }
 
+    def failOnCopy(fp: ParsedPath) = {
+      _failedToCopyFiles += fp
+      this
+    }
+
+    def failOnRemove(fp: ParsedPath) = {
+      _failedToRemoveFiles += fp
+      this
+    }
+
+    def failOnList(acc: String, cont: String) = {
+      _badContainers += ((Account(acc), Container(cont)))
+      this
+    }
+
     def files = _files.values.flatten
 
-    private def isBadFile(blob: ParsedPath)                = _badFiles.contains(blob)
-    private def isBadContainer(cont: (Account, Container)) = _badContainers.contains(cont)
+    private def addToFs(blob: ParsedPath): Unit = _files((blob.account, blob.container)) :+= blob
 
-    private def addToFs(blob: ParsedPath): Unit      = _files((blob.account, blob.container)) :+= blob
     private def removeFromFs(blob: ParsedPath): Unit = _files((blob.account, blob.container)) -= blob
 
-    override def copyContent(fromBlob: ParsedPath, toBlob: ParsedPath): Id[Either[OperationFailure, Unit]] =
-      if (isBadFile(fromBlob)) OperationFailure(null, null).asLeft
+    override def copyContent(fromBlob: ParsedPath, toBlob: ParsedPath): Id[Either[Throwable, Unit]] =
+      if (_failedToCopyFiles.contains(fromBlob)) new IllegalStateException("File is bad").asLeft
       else addToFs(toBlob).asRight
 
-    override def remove(blob: ParsedPath): Id[Either[OperationFailure, Unit]] =
-      if (isBadFile(blob)) OperationFailure(null, null).asLeft
+    override def remove(blob: ParsedPath): Id[Either[Throwable, Unit]] =
+      if (_failedToRemoveFiles.contains(blob)) new IllegalStateException("File is bad").asLeft
       else removeFromFs(blob).asRight
 
-    override def foreachBlob[U](container: (Account, Container), prefix: RelativePath)(
+    override def foreachBlob[U](location: (Account, Container), prefix: Prefix)(
       action: Seq[ParsedPath] => Id[Seq[U]]
-    ): Id[Either[FileSystemFailure, Seq[U]]] =
-      if (isBadContainer(container)) FileSystemFailure(null, null).asLeft
+    ): Id[Either[Throwable, Seq[U]]] =
+      if (_badContainers.contains(location)) new IllegalStateException("Container is bad").asLeft
       else {
-        val allFiles = _files(container)
-        val subfiles = allFiles.filter(_.relative.path.startsWith(prefix.path))
+        val allFiles = _files(location)
+        val subfiles = allFiles.filter(_.prefix.path.startsWith(prefix.path))
         action(subfiles).asRight
       }
   }
@@ -67,28 +82,101 @@ object FileSystemActionTest {
   }
 }
 
-class FileSystemActionTest extends FunSuite with Matchers {
+class FileSystemActionTest extends FunSuite with Matchers with BeforeAndAfterEach {
 
-  def actionsOn(fs: InMemoryIdFileSystem) = new FileSystemAction[Id, ParsedPath, (Account, Container)](
-    new IdEndpoint,
-    parId,
-    fs
-  )
+  object paths {
+    object source {
+      val a_b = path("cont@acc:/a/b/")
+    }
 
-  test("relativize paths") {
-    val srcRoot      = path("acc@cont:/a/b")
-    val srcBlob      = path("acc@cont:/a/b/c")
-    val dstRoot      = path("acc@cont:/d/e/f")
-    val expectedBlob = path("acc@cont:/d/e/f/c")
+    object dest {
+      val e_f_g = path("cont@acc:/e/f/g/")
+    }
 
-    val fs = (new InMemoryIdFileSystem)
-      .addBlob(srcBlob)
+    object initial {
+      val a_b_c   = path("cont@acc:/a/b/c")
+      val a_b_c_d = path("cont@acc:/a/b/c/d")
+    }
 
-    val evaluated = actionsOn(fs).evaluate(
-      Copy(srcRoot :: Nil, dstRoot)
+    object expected {
+      val e_f_g_c   = path("cont@acc:/e/f/g/c")
+      val e_f_g_c_d = path("cont@acc:/e/f/g/c/d")
+    }
+  }
+
+  var action: FileSystemAction[Id, ParsedPath, (Account, Container)] = _
+  var fs: InMemoryIdFileSystem                                       = _
+
+  override protected def beforeEach(): Unit = {
+    fs = (new InMemoryIdFileSystem)
+      .addBlob(paths.initial.a_b_c_d)
+      .addBlob(paths.initial.a_b_c)
+
+    action = new FileSystemAction[Id, ParsedPath, (Account, Container)](
+      new IdEndpoint,
+      parId,
+      fs
     )
+  }
 
-    evaluated should be('right)
-    fs.files should contain only (srcBlob, expectedBlob)
+  test("can copy blobs") {
+    action.evaluate(Copy(paths.source.a_b :: Nil, paths.dest.e_f_g)) should be('right)
+    fs.files should contain only (
+      paths.initial.a_b_c_d,
+      paths.initial.a_b_c,
+      paths.expected.e_f_g_c,
+      paths.expected.e_f_g_c_d
+    )
+  }
+
+  test("can move blobs") {
+    action.evaluate(Move(paths.source.a_b :: Nil, paths.dest.e_f_g)) should be('right)
+    fs.files should contain only (
+      paths.expected.e_f_g_c,
+      paths.expected.e_f_g_c_d
+    )
+  }
+
+  test("can remove blobs") {
+    action.evaluate(Remove(paths.source.a_b :: Nil)) should be('right)
+    fs.files should be('empty)
+  }
+
+  test("failure on container listing is fatal") {
+    fs.failOnList("acc", "cont")
+
+    action.evaluate(Remove(paths.source.a_b :: Nil)) should be('left)
+  }
+
+  test("copy of a bad blob is not fatal") {
+    fs.failOnCopy(paths.initial.a_b_c)
+
+    action.evaluate(Copy(paths.source.a_b :: Nil, paths.dest.e_f_g)) should be('right)
+    fs.files should contain only (
+      paths.initial.a_b_c,
+      paths.initial.a_b_c_d,
+      paths.expected.e_f_g_c_d
+    )
+  }
+
+  test("move of a bad blob is not fatal") {
+    fs.failOnCopy(paths.initial.a_b_c)
+    fs.failOnRemove(paths.initial.a_b_c_d)
+
+    action.evaluate(Move(paths.source.a_b :: Nil, paths.dest.e_f_g)) should be('right)
+    fs.files should contain only (
+      paths.initial.a_b_c,
+      paths.initial.a_b_c_d,
+      paths.expected.e_f_g_c_d
+    )
+  }
+
+  test("remove of a bad blob is not fatal") {
+    fs.failOnRemove(paths.initial.a_b_c)
+
+    action.evaluate(Remove(paths.source.a_b :: Nil)) should be('right)
+    fs.files should contain only (
+      paths.initial.a_b_c
+    )
   }
 }

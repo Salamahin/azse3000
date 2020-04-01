@@ -1,9 +1,9 @@
-package com.aswatson.aswrdm.azse3000.preprocess
+package com.aswatson.aswrdm.azse3000.syntax
 
 import com.aswatson.aswrdm.azse3000.shared.Command
 import org.scalatest.{FunSuite, Matchers}
 
-class ConfigurationBasedPathRefineryTest extends FunSuite with Matchers {
+class PathAliasesDesugar extends FunSuite with Matchers {
   val knownHosts = Map(
     "known" -> "https://known.host"
   )

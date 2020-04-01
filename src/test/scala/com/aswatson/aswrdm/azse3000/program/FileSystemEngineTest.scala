@@ -1,14 +1,14 @@
 package com.aswatson.aswrdm.azse3000.program
 
 import cats.Id
-import com.aswatson.aswrdm.azse3000.program.FileSystemActionTest.{IdEndpoint, InMemoryIdFileSystem}
+import com.aswatson.aswrdm.azse3000.program.FileSystemEngineTest.{IdEndpoint, InMemoryIdFileSystem}
 import com.aswatson.aswrdm.azse3000.shared._
-import org.scalatest.{BeforeAndAfterEach, FunSuite, Matchers}
+import org.scalatest.{BeforeAndAfter, FunSuite, Matchers}
 
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
-object FileSystemActionTest {
+object FileSystemEngineTest {
 
   class InMemoryIdFileSystem extends FileSystem[Id, ParsedPath, (Account, Container)] {
 
@@ -82,7 +82,7 @@ object FileSystemActionTest {
   }
 }
 
-class FileSystemActionTest extends FunSuite with Matchers with BeforeAndAfterEach {
+class FileSystemEngineTest extends FunSuite with Matchers with BeforeAndAfter {
 
   object paths {
     object source {
@@ -104,15 +104,15 @@ class FileSystemActionTest extends FunSuite with Matchers with BeforeAndAfterEac
     }
   }
 
-  var action: FileSystemAction[Id, ParsedPath, (Account, Container)] = _
+  var action: FileSystemEngine[Id, ParsedPath, (Account, Container)] = _
   var fs: InMemoryIdFileSystem                                       = _
 
-  override protected def beforeEach(): Unit = {
+  before {
     fs = (new InMemoryIdFileSystem)
       .addBlob(paths.initial.a_b_c_d)
       .addBlob(paths.initial.a_b_c)
 
-    action = new FileSystemAction[Id, ParsedPath, (Account, Container)](
+    action = new FileSystemEngine[Id, ParsedPath, (Account, Container)](
       new IdEndpoint,
       parId,
       fs

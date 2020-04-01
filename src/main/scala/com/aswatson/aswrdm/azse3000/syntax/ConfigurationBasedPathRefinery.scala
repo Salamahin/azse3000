@@ -1,4 +1,4 @@
-package com.aswatson.aswrdm.azse3000.preprocess
+package com.aswatson.aswrdm.azse3000.syntax
 
 import com.aswatson.aswrdm.azse3000.shared.Command
 

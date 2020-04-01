@@ -3,9 +3,9 @@
 //import cats.data.EitherT
 //import cats.{Applicative, Monad}
 //import com.aswatson.aswrdm.azse3000.expression.ActionInterpret
-//import com.aswatson.aswrdm.azse3000.shared._
+//import com.aswatson.aswrdm.azse3000.shared.{Expression, _}
 //
-//class UserInteraction[F[_]: Monad](
+//class UserInterface[F[_]: Monad](
 //  implicit
 //  prompt: Prompt[F],
 //  syntax: CommandSyntax[F],
@@ -19,9 +19,9 @@
 //  import cats.syntax.functor._
 //  import cats.syntax.traverse._
 //
-//  private def getPaths(expr: Expression) = {
-//    val collectPaths = new ActionInterpret[F, Seq[Path]] {
-//      override def run(term: Action) = term match {
+//  private def getPaths(expr: Expression[Path]) = {
+//    val collectPaths = new ActionInterpret[F, Path, Seq[Path]] {
+//      override def run(term: Action[Path]) = term match {
 //        case Copy(from, to) => Monad[F].pure(from :+ to)
 //        case Move(from, to) => Monad[F].pure(from :+ to)
 //        case Remove(from)   => Monad[F].pure(from)
@@ -63,13 +63,25 @@
 //    } yield secrets.flatten.toMap
 //  }
 //
+//  private def replacePathsInExpression(expr: Expression[Path], map: Map[Path, ParsedPath]): Expression[ParsedPath] = {
+//
+//
+//
+//    expr match {
+//      case And(left, right) =>
+//      case Copy(from, to)   =>
+//      case Move(from, to)   =>
+//      case Remove(from)     =>
+//    }
+//  }
+//
 //  def run() =
-//    for {
+//    (for {
 //      rawCommand       <- EitherT.right[AggregatedFatal](prompt.command)
 //      desugaredCommand <- EitherT.right[AggregatedFatal](syntax.desugar(rawCommand))
 //      parsedExpression <- EitherT(parse.toExpression(desugaredCommand)).leftMap(c => AggregatedFatal(c :: Nil))
 //      inputPaths       <- EitherT.right[AggregatedFatal](getPaths(parsedExpression))
 //      parsedPaths      <- EitherT(parsePaths(inputPaths))
 //      creds            <- EitherT.right[AggregatedFatal](getCreds(parsedPaths.values.toVector))
-//    } yield (parsedExpression, parsedPaths, creds)
+//    } yield (parsedExpression, parsedPaths, creds)).value
 //}

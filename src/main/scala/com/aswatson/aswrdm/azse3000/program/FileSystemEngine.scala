@@ -5,7 +5,7 @@ import cats.data.EitherT
 import com.aswatson.aswrdm.azse3000.expression.ActionInterpret
 import com.aswatson.aswrdm.azse3000.shared._
 
-class FileSystemAction[F[_]: Monad, B, K](
+class FileSystemEngine[F[_]: Monad, B, K](
   endpoint: Endpoint[F, B, K],
   par: Parallel[F],
   fs: FileSystem[F, B, K]

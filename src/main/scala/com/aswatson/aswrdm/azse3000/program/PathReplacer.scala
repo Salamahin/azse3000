@@ -4,7 +4,7 @@ import com.aswatson.aswrdm.azse3000.shared._
 
 import scala.collection.mutable
 
-trait PathReplacer {
+class PathReplacer {
   def replace(expr: Expression[Path], paths: Map[Path, ParsedPath]) = {
 
     def iter(

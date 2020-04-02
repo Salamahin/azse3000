@@ -33,7 +33,7 @@ class PathReplacerTest extends FunSuite with Matchers {
       Remove(rawPath5 :: Nil)
     )
 
-    new PathReplacer {}.replace(expr, pathsMapping) should be(
+    new PathReplacer().replace(expr, pathsMapping) should be(
       And(
         And(
           Copy(parsedPath1 :: Nil, parsedPath2),

@@ -1,19 +1,31 @@
 package com.aswatson.aswrdm.azse3000.program
 
-import com.aswatson.aswrdm.azse3000.shared.{And, Expression, Path}
+import com.aswatson.aswrdm.azse3000.shared._
+
+import scala.collection.mutable
 
 trait PathReplacer {
-  def replace(expr: Expression[Path]) = {
-    def iter(exprs: List[Expression[Path]], acc: List[Expression[Path]]): List[Expression[Path]] = {
+  def replace(expr: Expression[Path], paths: Map[Path, ParsedPath]) = {
 
-      exprs match {
-        case Nil                      => acc
-        case And(left, right) :: tail => iter(left :: right :: tail, acc)
-        case e :: tail                => iter(tail, acc :+ e)
+    def iter(
+      expr: List[Expression[Path]],
+      acc: mutable.Map[Expression[Path], () => Expression[ParsedPath]]
+    ): mutable.Map[Expression[Path], () => Expression[ParsedPath]] = {
+      expr match {
+        case Nil => acc
+
+        case (and @ And(left, right)) :: tail =>
+          iter(
+            left :: right :: tail,
+            acc += (and -> (() => And(acc(left)(), acc(right)())))
+          )
+
+        case (cp @ Copy(from, to)) :: tail => iter(tail, acc += (cp -> (() => Copy(from.map(paths), paths(to)))))
+        case (mv @ Move(from, to)) :: tail => iter(tail, acc += (mv -> (() => Move(from.map(paths), paths(to)))))
+        case (rm @ Remove(from)) :: tail   => iter(tail, acc += (rm -> (() => Remove(from.map(paths)))))
       }
-
     }
 
-    iter(expr :: Nil, Nil)
+    iter(expr :: Nil, mutable.Map.empty)(expr)()
   }
 }

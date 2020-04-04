@@ -15,7 +15,7 @@ class PathAliasesDesugar extends FunSuite with Matchers {
   ).foreach {
     case (raw, expected) =>
       test(s"$raw should be refined to $expected") {
-        ConfigurationBasedPathRefinery.refinePaths(knownHosts)(Command(raw)) shouldBe Command(expected)
+        ToUrlFormat.refine(knownHosts)(Command(raw)) shouldBe Command(expected)
       }
   }
 }

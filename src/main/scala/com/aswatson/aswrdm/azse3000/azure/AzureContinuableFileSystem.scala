@@ -7,7 +7,8 @@ import com.aswatson.aswrdm.azse3000.shared._
 import com.microsoft.azure.storage.blob.{CloudBlobContainer, CloudBlockBlob, ListBlobItem}
 import com.microsoft.azure.storage.{ResultContinuation, ResultSegment}
 
-class AzureContinuableFileSystem[F[_]: Monad: Parallel](batchSize: Int)(
+class AzureContinuableFileSystem[F[_]: Monad](
+  batchSize: Int,
   endpoint: Endpoint[F, CloudBlockBlob, CloudBlobContainer],
   continuable: Continuable[F]
 ) extends FileSystem[F, CloudBlockBlob, CloudBlobContainer] {

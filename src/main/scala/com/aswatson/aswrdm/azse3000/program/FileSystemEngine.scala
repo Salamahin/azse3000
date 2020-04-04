@@ -5,6 +5,8 @@ import cats.data.EitherT
 import com.aswatson.aswrdm.azse3000.expression.ActionInterpret
 import com.aswatson.aswrdm.azse3000.shared._
 
+import scala.annotation.tailrec
+
 class FileSystemEngine[F[_]: Monad, B, K](
   endpoint: Endpoint[F, B, K],
   par: Parallel[F],
@@ -19,6 +21,7 @@ class FileSystemEngine[F[_]: Monad, B, K](
   import cats.syntax.functor._
 
   private def relativize(blob: B, from: ParsedPath, to: ParsedPath): F[ParsedPath] = {
+    @tailrec
     def remainedPaths(blobPaths: List[String], relativeToPaths: List[String]): List[String] =
       (blobPaths, relativeToPaths) match {
         case (remains, Nil)                                           => remains

@@ -59,10 +59,15 @@ class UserInterface[F[_]: Monad](
                           }
 
       (_, secrets) = pathsAndSecrets.separate
-    } yield secrets.flatten.toMap
+    } yield secrets
+      .flatten
+      .map {
+        case (pp, secret) => (pp.account, pp.container) -> secret
+      }
+      .toMap
   }
 
-  def run() =
+  def run(): F[Either[AggregatedFatal, (Expression[ParsedPath], Map[(Account, Container), Secret])]] =
     (for {
       rawCommand         <- EitherT.right[AggregatedFatal](prompt.command)
       desugaredCommand   <- EitherT.right[AggregatedFatal](syntax.desugar(rawCommand))

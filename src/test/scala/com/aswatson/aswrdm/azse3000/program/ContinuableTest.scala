@@ -22,7 +22,7 @@ class ContinuableTest extends FunSuite with Matchers {
     iter(limit, None).get
   }
 
-  private val continuable = new Continuable[Id] {}
+  private val continuable = new Continuable[Id](parId)
 
   test("can continue") {
     val res = continuable.doAnd[Continuation, Int](

@@ -11,7 +11,7 @@ class ExpandCurlyBracesDesugar extends FunSuite with Matchers {
   ).foreach {
     case (raw, expected) =>
       test(s"$raw should be refined to $expected") {
-        ExpandCurlyBracesRefinery.expand(Command(raw)) shouldBe Command(expected)
+        ExpandCurlyBraces.expand(Command(raw)) shouldBe Command(expected)
       }
   }
 }

@@ -2,7 +2,7 @@ package com.aswatson.aswrdm.azse3000.syntax
 
 import com.aswatson.aswrdm.azse3000.shared.Command
 
-object ExpandCurlyBracesRefinery {
+object ExpandCurlyBraces {
   private def pattern = "([^ ]+)?\\{([^ ]+),?\\}([^ ]+)?".r
 
   def expand(command: Command): Command = {

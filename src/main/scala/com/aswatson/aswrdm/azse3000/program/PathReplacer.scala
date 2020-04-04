@@ -2,11 +2,13 @@ package com.aswatson.aswrdm.azse3000.program
 
 import com.aswatson.aswrdm.azse3000.shared._
 
+import scala.annotation.tailrec
 import scala.collection.mutable
 
 class PathReplacer {
   def replace(expr: Expression[Path], paths: Map[Path, ParsedPath]) = {
 
+    @tailrec
     def iter(
       expr: List[Expression[Path]],
       acc: mutable.Map[Expression[Path], () => Expression[ParsedPath]]

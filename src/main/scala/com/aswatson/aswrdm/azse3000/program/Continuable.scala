@@ -5,7 +5,7 @@ import com.aswatson.aswrdm.azse3000.shared.Parallel
 
 class Continuable[F[_]: Monad](par: Parallel[F]) {
 
-  def doAnd[C, T](init: () => F[C], next: C => F[Option[C]], map: C => F[T]): F[Seq[T]] = {
+  def doAndContinue[C, T](init: () => F[C], next: C => F[Option[C]], map: C => F[T]): F[Seq[T]] = {
     import cats.syntax.flatMap._
     import cats.syntax.either._
     import cats.syntax.functor._

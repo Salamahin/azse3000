@@ -7,11 +7,11 @@ import com.aswatson.aswrdm.azse3000.shared._
 import com.microsoft.azure.storage.blob.{CloudBlobContainer, CloudBlockBlob, ListBlobItem}
 import com.microsoft.azure.storage.{ResultContinuation, ResultSegment}
 
-class AzureContinuableFileSystem[F[_]: Monad](
+class AzureContinuableListingFileSystem[F[_]: Monad](
   batchSize: Int,
   endpoint: Endpoint[F, CloudBlockBlob, CloudBlobContainer],
   continuable: Continuable[F]
-) extends FileSystem[F, CloudBlockBlob, CloudBlobContainer] {
+) extends AzureFileSystem {
 
   import cats.syntax.either._
   import cats.syntax.functor._
@@ -52,7 +52,7 @@ class AzureContinuableFileSystem[F[_]: Monad](
     }
 
     continuable
-      .doAnd[Either[Throwable, ResultSegment[ListBlobItem]], Either[Throwable, Seq[U]]](
+      .doAndContinue[Either[Throwable, ResultSegment[ListBlobItem]], Either[Throwable, Seq[U]]](
         () => continueListing(null), {
           case Right(segment) if segment.getHasMoreResults => continueListing(segment.getContinuationToken).map(Some(_))
           case _                                           => Monad[F].pure(None)
@@ -67,26 +67,5 @@ class AzureContinuableFileSystem[F[_]: Monad](
       )
       .map(sequence)
       .map(x => x.map(_.flatten))
-  }
-
-  override def copyContent(fromBlob: CloudBlockBlob, toBlob: CloudBlockBlob): F[Either[Throwable, Unit]] = {
-    import cats.syntax.either._
-
-    Monad[F].pure {
-      try {
-        val copy: Unit = toBlob.startCopy(fromBlob, null, true, null, null, null, null)
-        copy.asRight
-      } catch {
-        case e: Throwable => e.asLeft
-      }
-    }
-  }
-
-  override def remove(blob: CloudBlockBlob): F[Either[Throwable, Unit]] = Monad[F].pure {
-    try {
-      blob.delete().asRight
-    } catch {
-      case e: Throwable => e.asLeft
-    }
   }
 }

@@ -25,7 +25,7 @@ class ContinuableTest extends FunSuite with Matchers {
   private val continuable = new Continuable[Id](parId)
 
   test("can continue") {
-    val res = continuable.doAnd[Continuation, Int](
+    val res = continuable.doAndContinue[Continuation, Int](
       () => continuation(3),
       c => c.next,
       c => c.value
@@ -35,7 +35,7 @@ class ContinuableTest extends FunSuite with Matchers {
   }
 
   test("is stack safe") {
-    continuable.doAnd[Continuation, Int](
+    continuable.doAndContinue[Continuation, Int](
       () => continuation(1000000),
       c => c.next,
       c => c.value

@@ -1,6 +1,6 @@
 package com.aswatson.aswrdm.azse3000
 
-import com.aswatson.aswrdm.azse3000.azure.{AzureContinuableFileSystem, AzureEndpoints}
+import com.aswatson.aswrdm.azse3000.azure.{AzureContinuableListingFileSystem, AzureEndpoints}
 import com.aswatson.aswrdm.azse3000.configurable.Config
 import com.aswatson.aswrdm.azse3000.expression.CommandParser
 import com.aswatson.aswrdm.azse3000.program.{Continuable, FileSystemEngine, UserInterface}
@@ -75,7 +75,7 @@ class ZioProgram {
 
   private def continuable(conf: Config) = new Continuable[UIO](parallel(conf))
 
-  private def fs(conf: Config, creds: CREDS) = new AzureContinuableFileSystem[UIO](
+  private def fs(conf: Config, creds: CREDS) = new AzureContinuableListingFileSystem[UIO](
     conf.parallelism,
     endpoint(creds),
     continuable(conf)

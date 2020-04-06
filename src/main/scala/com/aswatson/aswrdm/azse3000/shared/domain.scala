@@ -1,37 +1,32 @@
 package com.aswatson.aswrdm.azse3000.shared
 
-sealed trait Issue
+sealed trait Fatal
 sealed trait Aggregate
-final case class InvalidCommand(msg: String)                     extends Exception with Issue with Aggregate
-final case class MalformedPath(path: Path)                       extends Exception with Issue with Aggregate
-final case class NoSuchContainer(path: Path)                     extends Exception with Issue with Aggregate
-final case class FileSystemFailure(path: Path, cause: Throwable) extends Exception with Issue with Aggregate
-final case class Failure(reasons: Seq[Issue with Aggregate])     extends Exception with Issue
+final case class InvalidCommand(msg: String)                         extends Exception with Fatal with Aggregate
+final case class MalformedPath(msg: String)                          extends Exception with Fatal with Aggregate
+final case class FileSystemFailure(msg: String, cause: Throwable)    extends Exception with Fatal with Aggregate
+final case class AggregatedFatal(reasons: Seq[Fatal with Aggregate]) extends Exception with Fatal
 
-final case class Path(path: String) extends AnyVal {
-  def resolve(other: Path): Path = Path(s"$path/${other.path}")
-}
+final case class Path(path: String)   extends AnyVal
+final case class Prefix(path: String) extends AnyVal
+final case class ParsedPath(account: Account, container: Container, prefix: Prefix)
+
 final case class Command(cmd: String)                      extends AnyVal
 final case class Account(name: String)                     extends AnyVal
 final case class Secret(secret: String)                    extends AnyVal
-final case class ContainerName(name: String)               extends AnyVal
+final case class Container(name: String)                   extends AnyVal
 final case class OperationDescription(description: String) extends AnyVal
 
-sealed trait Expression
-sealed trait Action
+sealed trait Expression[P]
+sealed trait Action[P]
+final case class And[P](left: Expression[P], right: Expression[P]) extends Expression[P]
+final case class Copy[P](from: Seq[P], to: P)                      extends Expression[P] with Action[P]
+final case class Move[P](from: Seq[P], to: P)                      extends Expression[P] with Action[P]
+final case class Remove[P](from: Seq[P])                           extends Expression[P] with Action[P]
 
-final case class And(left: Expression, right: Expression) extends Expression
-final case class Copy(from: Seq[Path], to: Path)          extends Expression with Action
-final case class Move(from: Seq[Path], to: Path)          extends Expression with Action
-final case class Remove(from: Seq[Path])                  extends Expression with Action
-
-final case class FileOperationFailed(file: Path, th: Throwable)
-final case class OperationResult(succeed: Long, errors: Vector[FileOperationFailed])
-final case class CredsForPath(path: Path, account: Account, container: ContainerName)
+final case class OperationFailure(msg: String, th: Throwable)
+final case class OperationResult(succeed: Long, errors: Vector[OperationFailure])
 
 object types {
-  type CREDS                    = Map[Path, Secret]
-  type DECOMPOSED_PATH          = (Account, ContainerName, Path)
-  type REQUIRED_CREDS_FOR_PATHS = Map[(Account, ContainerName), Vector[Path]]
-  type OPERATIONS_SUMMARY       = Map[OperationDescription, OperationResult]
+  type CREDS = Map[(Account, Container), Secret]
 }

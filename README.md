@@ -54,3 +54,23 @@ cp container@myenv:/{from,to}
 
 The software will prompt a secret for the path unless it specified 
 in *known-secrets* section
+
+## Listing mode
+
+Two possible listing mode supported: *batched* & *recursive*. Looks like recursive 
+should work faster but creates additional pressure on Azure services.
+Proper configuration are:
+
+Config listing mode in *secrets.conf*
+```
+# For batching mode
+listing-mode: {
+  type: flat-limited
+  max-fetch-blobs: 100
+}
+
+# For recursive mode
+listing-mode: {
+  type: recursive
+}
+```

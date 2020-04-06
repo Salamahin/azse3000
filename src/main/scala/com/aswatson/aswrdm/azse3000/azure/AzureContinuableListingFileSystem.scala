@@ -10,16 +10,10 @@ import com.microsoft.azure.storage.{ResultContinuation, ResultSegment}
 class AzureContinuableListingFileSystem[F[_]: Monad](
   batchSize: Int,
   endpoint: Endpoint[F, CloudBlockBlob, CloudBlobContainer],
-  continuable: Continuable[F]
+  continuable: Continuable[EitherT[F, Throwable, *]]
 ) extends AzureFileSystem {
 
   import cats.syntax.either._
-  import cats.syntax.functor._
-
-  private def sequence[A, B](s: Seq[Either[A, B]]): Either[A, Seq[B]] =
-    s.foldRight(Right(Nil): Either[A, Seq[B]]) { (e, acc) =>
-      for (xs <- acc.right; x <- e.right) yield x +: xs
-    }
 
   override def foreachBlob[U](cont: CloudBlobContainer, prefix: Prefix)(
     batchOperation: Seq[CloudBlockBlob] => F[Seq[U]]
@@ -40,7 +34,6 @@ class AzureContinuableListingFileSystem[F[_]: Monad](
             )
           )
         }
-        .value
 
     def getBlobs(rs: ResultSegment[ListBlobItem]) = {
       import scala.collection.JavaConverters._
@@ -52,20 +45,14 @@ class AzureContinuableListingFileSystem[F[_]: Monad](
     }
 
     continuable
-      .doAndContinue[Either[Throwable, ResultSegment[ListBlobItem]], Either[Throwable, Seq[U]]](
-        () => continueListing(null), {
-          case Right(segment) if segment.getHasMoreResults => continueListing(segment.getContinuationToken).map(Some(_))
-          case _                                           => Monad[F].pure(None)
-        },
+      .doAndContinue[ResultSegment[ListBlobItem], Seq[U]](
+        () => continueListing(null),
         rs =>
-          EitherT
-            .fromEither[F](rs)
-            .semiflatMap { rs =>
-              batchOperation(getBlobs(rs))
-            }
-            .value
+          if (rs.getHasMoreResults) continueListing(rs.getContinuationToken).map(x => Option(x))
+          else EitherT.pure[F, Throwable](None),
+        rs => EitherT.right[Throwable](batchOperation(getBlobs(rs)))
       )
-      .map(sequence)
-      .map(x => x.map(_.flatten))
+      .map(x => x.flatten)
+      .value
   }
 }

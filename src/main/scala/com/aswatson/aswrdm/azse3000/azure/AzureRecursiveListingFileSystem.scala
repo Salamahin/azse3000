@@ -8,49 +8,58 @@ import com.microsoft.azure.storage.blob.{CloudBlobContainer, CloudBlobDirectory,
 
 class AzureRecursiveListingFileSystem[F[_]: Monad](
   par: Parallel[F],
-  continuable: Continuable[F]
+  continuable: Continuable[EitherT[F, Throwable, *]]
 ) extends AzureFileSystem {
   override def foreachBlob[U](container: CloudBlobContainer, prefix: Prefix)(
     action: Seq[CloudBlockBlob] => F[Seq[U]]
   ): F[Either[Throwable, Seq[U]]] = {
     import cats.syntax.either._
-    import cats.syntax.functor._
 
     import scala.collection.JavaConverters._
 
-    def dirs(itms: Vector[CloudBlobDirectory]) = {
-       itms
-        .filter(_.isInstanceOf[CloudBlobDirectory])
-        .map(_.asInstanceOf[CloudBlobDirectory])
+    def filterOfType[T](itms: Vector[ListBlobItem]) = {
+      itms
+        .filter(_.isInstanceOf[T])
+        .map(_.asInstanceOf[T])
     }
 
-    def next(itms: Vector[ListBlobItem]) =
+    def init() = {
       EitherT
-        .fromEither[F] {
+        .fromEither {
           Either.catchNonFatal {
-            dirs(itms) match {
+            val itms  = container.listBlobs(prefix.path).asScala.toVector
+            val dirs  = filterOfType[CloudBlobDirectory](itms)
+            val blobs = filterOfType[CloudBlockBlob](itms)
+
+            (dirs, blobs)
+          }
+        }
+    }
+
+    def next(dirs: Vector[CloudBlobDirectory]) = {
+      EitherT
+        .fromEither {
+          Either.catchNonFatal {
+            dirs match {
               case IndexedSeq() => None
-              case thisDir +: remainedDirs => Some(dirs(thisDir.listBlobs()))
+              case dir +: remainingDirs =>
+                val childrenOfDir = dir.listBlobs().asScala.toVector
+                val subdirs       = filterOfType[CloudBlobDirectory](childrenOfDir)
+                val blobsInDir    = filterOfType[CloudBlockBlob](childrenOfDir)
+
+                Some(subdirs ++ remainingDirs, blobsInDir)
             }
           }
         }
-        .value
-
-    def mapBlobs(itms: Vector[ListBlobItem]) = action {
-      itms
-        .filter(_.isInstanceOf[CloudBlockBlob])
-        .map(_.asInstanceOf[CloudBlockBlob])
     }
 
-    import scala.collection.JavaConverters._
     continuable
-      .doAndContinue[Either[Throwable, (Vector[CloudBlobDirectory], Vector[CloudBlockBlob])], Either[Throwable, Seq[
-        U
-      ]]](
-        () => next(separate(container.listBlobs(prefix.path).asScala.toVector)),
-        prev => next(prev)
+      .doAndContinue[(Vector[CloudBlobDirectory], Vector[CloudBlockBlob]), Seq[U]](
+        () => init(),
+        dirsAndBlobs => next(dirsAndBlobs._1),
+        dirsAndBlobs => EitherT.right[Throwable](action(dirsAndBlobs._2))
       )
       .map(_.flatten)
-
+      .value
   }
 }

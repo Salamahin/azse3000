@@ -1,5 +1,6 @@
 package com.aswatson.aswrdm.azse3000
 
+import cats.data.EitherT
 import com.aswatson.aswrdm.azse3000.azure.{AzureContinuableListingFileSystem, AzureEndpoints}
 import com.aswatson.aswrdm.azse3000.configurable.Config
 import com.aswatson.aswrdm.azse3000.expression.CommandParser
@@ -73,7 +74,15 @@ class ZioProgram {
     override def zip[T, U](first: UIO[T], second: UIO[U]): UIO[(T, U)] = first <&> second
   }
 
-  private def continuable(conf: Config) = new Continuable[UIO](parallel(conf))
+  private def parallel2(conf: Config) = new Parallel[EitherT[UIO, Throwable, *]] {
+    override def traverse[T, U](items: Seq[T])(action: T => EitherT[UIO, Throwable, U]): EitherT[UIO, Throwable, Seq[U]] = {
+      UIO.traverseParN(conf.parallelism)(items)(t => action(t))
+    }
+
+    override def zip[T, U](first: EitherT[UIO, Throwable, T], second: EitherT[UIO, Throwable, U]): EitherT[UIO, Throwable, (T, U)] = ???
+  }
+
+  private def continuable(conf: Config) = new Continuable[EitherT[UIO, Throwable, *]](parallel(conf))
 
   private def fs(conf: Config, creds: CREDS) = new AzureContinuableListingFileSystem[UIO](
     conf.parallelism,

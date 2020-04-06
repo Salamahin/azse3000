@@ -1,33 +1,25 @@
 package com.aswatson.aswrdm.azse3000.program
 
+import cats.Eval
 import com.aswatson.aswrdm.azse3000.shared._
-
-import scala.annotation.tailrec
-import scala.collection.mutable
 
 class PathReplacer {
   def replace(expr: Expression[Path], paths: Map[Path, ParsedPath]) = {
 
-    @tailrec
-    def iter(
-      expr: List[Expression[Path]],
-      acc: mutable.Map[Expression[Path], () => Expression[ParsedPath]]
-    ): mutable.Map[Expression[Path], () => Expression[ParsedPath]] = {
+    def trampolinedReplace(expr: Expression[Path]): Eval[Expression[ParsedPath]] = {
       expr match {
-        case Nil => acc
+        case And(left, right) =>
+          for {
+            l <- Eval.defer(trampolinedReplace(left))
+            r <- Eval.defer(trampolinedReplace(right))
+          } yield And(l, r)
 
-        case (and @ And(left, right)) :: tail =>
-          iter(
-            left :: right :: tail,
-            acc += (and -> (() => And(acc(left)(), acc(right)())))
-          )
-
-        case (cp @ Copy(from, to)) :: tail => iter(tail, acc += (cp -> (() => Copy(from.map(paths), paths(to)))))
-        case (mv @ Move(from, to)) :: tail => iter(tail, acc += (mv -> (() => Move(from.map(paths), paths(to)))))
-        case (rm @ Remove(from)) :: tail   => iter(tail, acc += (rm -> (() => Remove(from.map(paths)))))
+        case Copy(from, to) => Eval.now(Copy(from.map(paths), paths(to)))
+        case Move(from, to) => Eval.now(Move(from.map(paths), paths(to)))
+        case Remove(from)   => Eval.now(Remove(from.map(paths)))
       }
     }
 
-    iter(expr :: Nil, mutable.Map.empty)(expr)()
+    trampolinedReplace(expr).value
   }
 }

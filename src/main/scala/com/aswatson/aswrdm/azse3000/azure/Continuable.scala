@@ -1,4 +1,4 @@
-package com.aswatson.aswrdm.azse3000.program
+package com.aswatson.aswrdm.azse3000.azure
 
 import cats.Monad
 import com.aswatson.aswrdm.azse3000.shared.Parallel

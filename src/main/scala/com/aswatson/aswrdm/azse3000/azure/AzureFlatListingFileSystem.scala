@@ -2,15 +2,14 @@ package com.aswatson.aswrdm.azse3000.azure
 
 import cats.Monad
 import cats.data.EitherT
-import com.aswatson.aswrdm.azse3000.program.Continuable
 import com.aswatson.aswrdm.azse3000.shared._
 import com.microsoft.azure.storage.blob.{CloudBlobContainer, CloudBlockBlob, ListBlobItem}
 import com.microsoft.azure.storage.{ResultContinuation, ResultSegment}
 
-class AzureContinuableListingFileSystem[F[_]: Monad](
+class AzureFlatListingFileSystem[F[_]: Monad](
   batchSize: Int,
   endpoint: Endpoint[F, CloudBlockBlob, CloudBlobContainer],
-  continuable: Continuable[EitherT[F, Throwable, *]]
+  par: Parallel[F]
 ) extends AzureFileSystem {
 
   import cats.syntax.either._
@@ -44,12 +43,14 @@ class AzureContinuableListingFileSystem[F[_]: Monad](
         .toVector
     }
 
-    continuable
+    new Continuable(eitherTPar(par))
       .doAndContinue[ResultSegment[ListBlobItem], Seq[U]](
         () => continueListing(null),
+
         rs =>
           if (rs.getHasMoreResults) continueListing(rs.getContinuationToken).map(x => Option(x))
           else EitherT.pure[F, Throwable](None),
+
         rs => EitherT.right[Throwable](batchOperation(getBlobs(rs)))
       )
       .map(x => x.flatten)

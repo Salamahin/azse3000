@@ -1,13 +1,12 @@
 package com.aswatson.aswrdm.azse3000
 
-import cats.data.EitherT
-import com.aswatson.aswrdm.azse3000.azure.{AzureContinuableListingFileSystem, AzureEndpoints}
-import com.aswatson.aswrdm.azse3000.configurable.Config
+import com.aswatson.aswrdm.azse3000.azure.{AzureEndpoints, AzureFlatListingFileSystem, AzureRecursiveListingFileSystem}
+import com.aswatson.aswrdm.azse3000.configurable.{Config, FlatLimited, Recursive}
 import com.aswatson.aswrdm.azse3000.expression.CommandParser
-import com.aswatson.aswrdm.azse3000.program.{Continuable, FileSystemEngine, UserInterface}
+import com.aswatson.aswrdm.azse3000.program.{FileSystemEngine, UserInterface}
 import com.aswatson.aswrdm.azse3000.shared._
 import com.aswatson.aswrdm.azse3000.shared.types.CREDS
-import com.aswatson.aswrdm.azse3000.syntax.{EncodeUrl, ExpandCurlyBraces, ToUrlFormat}
+import com.aswatson.aswrdm.azse3000.syntax.SyntaxSugar
 import zio._
 
 class ZioProgram {
@@ -26,11 +25,7 @@ class ZioProgram {
 
   private def syntax(conf: Config) = new CommandSyntax[RIO[Console, *]] {
     override def desugar(cmd: Command): RIO[Console, Command] = UIO {
-      EncodeUrl.encode(
-        ExpandCurlyBraces.expand(
-          ToUrlFormat.refine(conf.knownHosts)(cmd)
-        )
-      )
+      new SyntaxSugar(conf.knownHosts).desugar(cmd)
     }
   }
 
@@ -74,21 +69,12 @@ class ZioProgram {
     override def zip[T, U](first: UIO[T], second: UIO[U]): UIO[(T, U)] = first <&> second
   }
 
-  private def parallel2(conf: Config) = new Parallel[EitherT[UIO, Throwable, *]] {
-    override def traverse[T, U](items: Seq[T])(action: T => EitherT[UIO, Throwable, U]): EitherT[UIO, Throwable, Seq[U]] = {
-      UIO.traverseParN(conf.parallelism)(items)(t => action(t))
+  private def fs(conf: Config, creds: CREDS) = {
+    conf.listingMode match {
+      case FlatLimited(fetchMax) => new AzureFlatListingFileSystem[UIO](fetchMax, endpoint(creds), parallel(conf))
+      case Recursive             => new AzureRecursiveListingFileSystem[UIO](parallel(conf))
     }
-
-    override def zip[T, U](first: EitherT[UIO, Throwable, T], second: EitherT[UIO, Throwable, U]): EitherT[UIO, Throwable, (T, U)] = ???
   }
-
-  private def continuable(conf: Config) = new Continuable[EitherT[UIO, Throwable, *]](parallel(conf))
-
-  private def fs(conf: Config, creds: CREDS) = new AzureContinuableListingFileSystem[UIO](
-    conf.parallelism,
-    endpoint(creds),
-    continuable(conf)
-  )
 
   private def conf: Config = {
     import pureconfig._

@@ -1,7 +1,8 @@
-package com.aswatson.aswrdm.azse3000.program
+package com.aswatson.aswrdm.azse3000.azure
 
 import cats.Id
-import com.aswatson.aswrdm.azse3000.program.ContinuableTest.Continuation
+import com.aswatson.aswrdm.azse3000.azure.ContinuableTest.Continuation
+import com.aswatson.aswrdm.azse3000.program.parId
 import org.scalatest.{FunSuite, Matchers}
 
 import scala.annotation.tailrec

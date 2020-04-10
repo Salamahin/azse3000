@@ -13,7 +13,7 @@ import com.dimafeng.testcontainers.{
 }
 import com.microsoft.azure.storage.StorageCredentialsAccountAndKey
 import com.microsoft.azure.storage.blob._
-import org.scalatest.{FunSuite, Matchers}
+import org.scalatest.{BeforeAndAfter, FunSuite, Matchers}
 
 object AzureFileSystemTest {
   class AzuritePath(val path: String) {
@@ -22,7 +22,7 @@ object AzureFileSystemTest {
   }
 }
 
-class AzureFileSystemTest extends FunSuite with ForAllTestDockerContainer with Matchers {
+class AzureFileSystemTest extends FunSuite with ForAllTestDockerContainer with Matchers with BeforeAndAfter {
   private val storageAcc      = "devstoreaccount1"
   private val storageKey      = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
   private val blobStoragePort = 10000
@@ -60,56 +60,32 @@ class AzureFileSystemTest extends FunSuite with ForAllTestDockerContainer with M
       }
   }
 
-  private def find(cont: CloudBlobContainer) = {
-    import scala.collection.JavaConverters._
-
-    cont
-      .listBlobs(null, true)
-      .asScala
-      .map(_.asInstanceOf[CloudBlockBlob])
-      .map(_.getUri.toString)
-  }
-
   private def collectPaths(blobs: Seq[CloudBlockBlob]) = blobs.map(_.getUri.toString)
 
-  test("Recursive file system should be able to fetch all files in nested dirs") {
-    val containerName = "flat-listing"
-    val fileA         = "folder1/a"
-    val fileB         = "folder1/folder2/b"
-    val fileC         = "folder1/folder2/c"
+  var blobContainer: CloudBlobContainer = _
+  val containerName                     = "flat-listing"
+  val fileA                             = "folder1/a"
+  val fileB                             = "folder1/folder2/b"
+  val fileC                             = "folder1/folder2/c"
 
-    val cont = createBlobContainer(containerName)
-    touch(cont, fileA, fileB, fileC)
-
-    val recursiveFs = new AzureRecursiveListingFileSystem[Id](program.parId)
-
-    val foundBlobs = recursiveFs.foreachBlob(cont, Prefix("folder1"))(collectPaths)
-    foundBlobs should be('right)
-    foundBlobs.right.get should contain only (
-      azuriteEndpoint.resolve(containerName).resolve(fileA).path,
-      azuriteEndpoint.resolve(containerName).resolve(fileB).path,
-      azuriteEndpoint.resolve(containerName).resolve(fileC).path,
-    )
+  before {
+    blobContainer = createBlobContainer(containerName)
+    touch(blobContainer, fileA, fileB, fileC)
   }
 
-//  test("Recursive file system should be able to fetch all files in nested dirs") {
-//    val containerName = "flat-listing"
-//    val fileA         = "folder1/a"
-//    val fileB         = "folder1/folder2/b"
-//    val fileC         = "folder1/folder2/c"
-//
-//    val cont = createBlobContainer(containerName)
-//    touch(cont, fileA, fileB, fileC)
-//
-//    val recursiveFs = new AzureFlatListingFileSystem[Id](1, program.parId)
-//
-//    val foundBlobs = recursiveFs.foreachBlob(cont, Prefix("folder1"))(collectPaths)
-//    foundBlobs should be('right)
-//    foundBlobs.right.get should contain only (
-//      azuriteEndpoint.resolve(containerName).resolve(fileA).path,
-//      azuriteEndpoint.resolve(containerName).resolve(fileB).path,
-//      azuriteEndpoint.resolve(containerName).resolve(fileC).path,
-//    )
-//  }
-
+  Map(
+    "recursive fs"    -> new AzureRecursiveListingFileSystem[Id](program.parId),
+    "flat listing fs" -> new AzureFlatListingFileSystem[Id](1, program.parId)
+  ).foreach {
+    case (descr, fs) =>
+      test(s"$descr is able to fetch files in nested dirs") {
+        val foundBlobs = fs.foreachBlob(blobContainer, Prefix("folder1"))(collectPaths)
+        foundBlobs should be('right)
+        foundBlobs.right.get should contain only (
+          azuriteEndpoint.resolve(containerName).resolve(fileA).path,
+          azuriteEndpoint.resolve(containerName).resolve(fileB).path,
+          azuriteEndpoint.resolve(containerName).resolve(fileC).path,
+        )
+      }
+  }
 }

@@ -6,11 +6,7 @@ import com.aswatson.aswrdm.azse3000.shared._
 import com.microsoft.azure.storage.blob.{CloudBlobContainer, CloudBlockBlob, ListBlobItem}
 import com.microsoft.azure.storage.{ResultContinuation, ResultSegment}
 
-class AzureFlatListingFileSystem[F[_]: Monad](
-  batchSize: Int,
-  endpoint: Endpoint[F, CloudBlockBlob, CloudBlobContainer],
-  par: Parallel[F]
-) extends AzureFileSystem {
+class AzureFlatListingFileSystem[F[_]: Monad](batchSize: Int, par: Parallel[F]) extends AzureFileSystem {
 
   import cats.syntax.either._
 

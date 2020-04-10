@@ -71,7 +71,7 @@ class ZioProgram {
 
   private def fs(conf: Config, creds: CREDS) = {
     conf.listingMode match {
-      case FlatLimited(fetchMax) => new AzureFlatListingFileSystem[UIO](fetchMax, endpoint(creds), parallel(conf))
+      case FlatLimited(fetchMax) => new AzureFlatListingFileSystem[UIO](fetchMax, parallel(conf))
       case Recursive             => new AzureRecursiveListingFileSystem[UIO](parallel(conf))
     }
   }

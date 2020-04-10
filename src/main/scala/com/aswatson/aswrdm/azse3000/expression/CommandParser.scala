@@ -11,7 +11,7 @@ object CommandParser extends RegexParsers with PackratParsers {
 
   private def path: Parser[Path] =
     "[\\w@\\-:/.]+".r ^^ { x =>
-      Path(x.toString)
+      Path(x)
     }
 
   private def cp: Parser[Expression[Path]] = ("cp" ~> path ~ rep1(path)) ^^ {
@@ -20,7 +20,7 @@ object CommandParser extends RegexParsers with PackratParsers {
       val from  = paths.init
       val to    = paths.last
 
-     Copy(from, to)
+      Copy(from, to)
   }
 
   private def mv: Parser[Expression[Path]] = ("mv" ~> path ~ rep1(path)) ^^ {

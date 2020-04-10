@@ -6,11 +6,7 @@ import cats.Id
 import com.aswatson.aswrdm.azse3000.azure.AzureFileSystemTest.AzuritePath
 import com.aswatson.aswrdm.azse3000.program
 import com.aswatson.aswrdm.azse3000.shared.Prefix
-import com.dimafeng.testcontainers.{
-  FixedHostPortGenericContainer,
-  Container => DockerContainer,
-  ForAllTestContainer => ForAllTestDockerContainer
-}
+import com.dimafeng.testcontainers.{FixedHostPortGenericContainer, Container => DockerContainer, ForAllTestContainer => ForAllTestDockerContainer}
 import com.microsoft.azure.storage.StorageCredentialsAccountAndKey
 import com.microsoft.azure.storage.blob._
 import org.scalatest.{BeforeAndAfter, FunSuite, Matchers}

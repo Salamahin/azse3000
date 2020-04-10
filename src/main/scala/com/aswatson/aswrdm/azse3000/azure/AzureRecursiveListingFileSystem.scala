@@ -3,7 +3,7 @@ package com.aswatson.aswrdm.azse3000.azure
 import cats.Monad
 import cats.data.EitherT
 import com.aswatson.aswrdm.azse3000.shared.{Parallel, Prefix}
-import com.microsoft.azure.storage.blob.{CloudBlobContainer, CloudBlobDirectory, CloudBlockBlob, ListBlobItem}
+import com.microsoft.azure.storage.blob.{CloudBlobContainer, CloudBlobDirectory, CloudBlockBlob}
 
 class AzureRecursiveListingFileSystem[F[_]: Monad](
   par: Parallel[F]

@@ -27,7 +27,7 @@ class AzureEndpoints[F[_]: Monad](creds: CREDS) extends Endpoint[F, CloudBlockBl
   override def showPath(p: ParsedPath): F[String] = Monad[F].pure { parsedPathToUri(p) }
 }
 
-object  AzureEndpoints {
+object AzureEndpoints {
   private def parsedPathToUri(p: ParsedPath) =
     s"https://${p.account.name}.blob.core.windows.net/${p.container.name}/${p.prefix.path}"
 

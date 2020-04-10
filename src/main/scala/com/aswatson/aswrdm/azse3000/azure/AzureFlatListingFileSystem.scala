@@ -42,11 +42,9 @@ class AzureFlatListingFileSystem[F[_]: Monad](batchSize: Int, par: Parallel[F]) 
     new Continuable(eitherTPar(par))
       .doAndContinue[ResultSegment[ListBlobItem], Seq[U]](
         () => continueListing(null),
-
         rs =>
           if (rs.getHasMoreResults) continueListing(rs.getContinuationToken).map(x => Option(x))
           else EitherT.pure[F, Throwable](None),
-
         rs => EitherT.right[Throwable](batchOperation(getBlobs(rs)))
       )
       .map(x => x.flatten)

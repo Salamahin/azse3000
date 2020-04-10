@@ -46,7 +46,8 @@ object CommandParserTest {
     case Remove(sources)   => s"rm ${sources.map(_.path).mkString(", ")}"
   }
 
-  implicit val cmdSemi: Semigroup[Command] = (x: Command, y: Command) => Command(
-    s"${x.cmd} && ${y.cmd}"
-  )
+  implicit val cmdSemi: Semigroup[Command] = (x: Command, y: Command) =>
+    Command(
+      s"${x.cmd} && ${y.cmd}"
+    )
 }

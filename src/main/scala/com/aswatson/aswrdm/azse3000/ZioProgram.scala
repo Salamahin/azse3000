@@ -65,7 +65,7 @@ class ZioProgram {
     override def zip[T, U](first: UIO[T], second: UIO[U]): UIO[(T, U)] = first <&> second
   }
 
-  private def fs(conf: Config, creds: CREDS) = {
+  private def fs(conf: Config) = {
     conf.listingMode match {
       case FlatLimited(fetchMax) => new AzureFlatListingFileSystem[UIO](fetchMax, parallel(conf))
       case Recursive             => new AzureRecursiveListingFileSystem[UIO](parallel(conf))
@@ -86,7 +86,7 @@ class ZioProgram {
   private def ui(conf: Config) = new UserInterface[RIO[Console, *]](prompt, syntax(conf), parse, vault(conf))
 
   private def engine(creds: CREDS, conf: Config) =
-    new FileSystemEngine(endpoint(creds), parallel(conf), fs(conf, creds))
+    new FileSystemEngine(endpoint(creds), parallel(conf), fs(conf))
 
   private def progressBar[R, T, E](program: ZIO[R, T, E]) = {
     val showProgress = (for {

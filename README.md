@@ -1,4 +1,6 @@
 # azse3000
+[![Build Status](https://travis-ci.com/Salamahin/azse3000.svg?branch=master)](https://travis-ci.com/Salamahin/azse3000)
+
 This is surely not an Azure Storage Explorer (3000)
 
 Provides bash-like syntax to operate on top of BlockBlobs in Azure

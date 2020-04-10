@@ -63,7 +63,7 @@ class AzureFileSystemTest extends FunSuite with ForAllTestDockerContainer with M
   private def collectPaths(blobs: Seq[CloudBlockBlob]) = blobs.map(_.getUri.toString)
 
   var blobContainer: CloudBlobContainer = _
-  val containerName                     = "flat-listing"
+  val containerName                     = "container"
   val fileA                             = "folder1/a"
   val fileB                             = "folder1/folder2/b"
   val fileC                             = "folder1/folder2/c"

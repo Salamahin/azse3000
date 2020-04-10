@@ -19,7 +19,8 @@ libraryDependencies ++= Seq(
   "com.github.pureconfig"  %% "pureconfig"               % "0.12.3"
 )
 
-libraryDependencies += "org.scalatest" %% "scalatest" % "3.0.8" % Test
+libraryDependencies += "org.scalatest" %% "scalatest"                      % "3.0.8"  % Test
+libraryDependencies += "com.dimafeng"  %% "testcontainers-scala-scalatest" % "0.36.1" % Test
 
 addCompilerPlugin("org.typelevel" %% "kind-projector"     % "0.11.0" cross CrossVersion.full)
 addCompilerPlugin("com.olegpy"    %% "better-monadic-for" % "0.3.1")

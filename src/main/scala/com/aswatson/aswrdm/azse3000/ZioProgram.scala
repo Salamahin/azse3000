@@ -6,7 +6,7 @@ import com.aswatson.aswrdm.azse3000.expression.CommandParser
 import com.aswatson.aswrdm.azse3000.program.{FileSystemEngine, UserInterface}
 import com.aswatson.aswrdm.azse3000.shared._
 import com.aswatson.aswrdm.azse3000.shared.types.CREDS
-import com.aswatson.aswrdm.azse3000.syntax.SyntaxSugar
+import com.aswatson.aswrdm.azse3000.syntax.ShellLikeSyntax
 import zio._
 
 class ZioProgram {
@@ -23,11 +23,7 @@ class ZioProgram {
       } yield Command(input)
   }
 
-  private def syntax(conf: Config) = new CommandSyntax[RIO[Console, *]] {
-    override def desugar(cmd: Command): RIO[Console, Command] = UIO {
-      new SyntaxSugar(conf.knownHosts).desugar(cmd)
-    }
-  }
+  private def syntax(conf: Config) = new ShellLikeSyntax[RIO[Console, *]](conf.knownHosts)
 
   private def parse = new Parse[RIO[Console, *]] {
     override def toExpression(prompted: Command): RIO[Console, Either[InvalidCommand, Expression[Path]]] = RIO {
@@ -71,7 +67,7 @@ class ZioProgram {
 
   private def fs(conf: Config, creds: CREDS) = {
     conf.listingMode match {
-      case FlatLimited(fetchMax) => new AzureFlatListingFileSystem[UIO](fetchMax, endpoint(creds), parallel(conf))
+      case FlatLimited(fetchMax) => new AzureFlatListingFileSystem[UIO](fetchMax, parallel(conf))
       case Recursive             => new AzureRecursiveListingFileSystem[UIO](parallel(conf))
     }
   }

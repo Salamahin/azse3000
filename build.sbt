@@ -6,6 +6,7 @@ scalaVersion := "2.12.8"
 scalacOptions ++= Seq(
   "-Ypartial-unification",
   "-Xfatal-warnings",
+  "-deprecation",
   "-language:postfixOps",
   "-language:higherKinds"
 )

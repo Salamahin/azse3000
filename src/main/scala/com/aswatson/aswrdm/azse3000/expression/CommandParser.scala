@@ -34,7 +34,9 @@ object CommandParser extends RegexParsers with PackratParsers {
 
   private def rm: Parser[Expression[Path]] = ("rm" ~> rep1(path)) ^^ (ps => Remove(ps))
 
-  private lazy val expr: PackratParser[Expression[Path]] = (cp | mv | rm) ~ rep("&&" ~> expr) ^^ {
+  private def count: Parser[Expression[Path]] = ("count" ~> rep1(path)) ^^ (ps => Count(ps))
+
+  private lazy val expr: PackratParser[Expression[Path]] = (cp | mv | rm | count) ~ rep("&&" ~> expr) ^^ {
     case e1 ~ es =>
       Semigroup
         .combineAllOption(e1 :: es)

@@ -24,6 +24,7 @@ class UserInterface[F[_]: Monad](
         case Copy(from, to) => Monad[F].pure(from :+ to)
         case Move(from, to) => Monad[F].pure(from :+ to)
         case Remove(from)   => Monad[F].pure(from)
+        case Count(in)      => Monad[F].pure(in)
       }
     }
 

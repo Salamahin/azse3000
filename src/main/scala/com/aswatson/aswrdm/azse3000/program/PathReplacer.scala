@@ -17,6 +17,7 @@ class PathReplacer {
         case Copy(from, to) => Eval.now(Copy(from.map(paths), paths(to)))
         case Move(from, to) => Eval.now(Move(from.map(paths), paths(to)))
         case Remove(from)   => Eval.now(Remove(from.map(paths)))
+        case Count(in)      => Eval.now(Count(in.map(paths)))
       }
     }
 

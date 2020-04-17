@@ -38,7 +38,7 @@ class FileSystemEngine[F[_]: Monad, B, K](
     } yield to.copy(prefix = Prefix((toPathNames ++ remainedPathNames).mkString("/")))
   }
 
-  private def forEachBlobIn[U](path: ParsedPath)(action: B => F[Either[OperationFailure, U]]) =
+  private def forEachBlobIn[U](path: ParsedPath)(action: B => F[Either[ActionFailed, U]]) =
     (for {
       container <- EitherT.right[Fatal with Aggregate](endpoint.toContainer(path))
       actionResults <- EitherT(fs.foreachBlob(container, path.prefix) { par.traverse(_)(action) })
@@ -46,7 +46,7 @@ class FileSystemEngine[F[_]: Monad, B, K](
                         .leftWiden[Fatal with Aggregate]
 
       (failed, succeed) = actionResults.toVector.separate
-    } yield OperationResult(succeed.size, failed)).value
+    } yield EvaluationSummary(succeed.size, failed)).value
 
   private def containerListingFailure(container: K, prefix: Prefix, cause: Throwable) =
     for {
@@ -57,25 +57,25 @@ class FileSystemEngine[F[_]: Monad, B, K](
     for {
       fromBlobPath <- endpoint.blobPath(from)
       toBlobPath   <- endpoint.blobPath(to)
-    } yield OperationFailure(s"Failed to copy content of ${fromBlobPath.path} to ${toBlobPath.path}", cause)
+    } yield ActionFailed(s"Failed to copy content of ${fromBlobPath.path} to ${toBlobPath.path}", cause)
 
   private def removeFailure(from: B, cause: Throwable) =
     for {
       fromBlobPath <- endpoint.blobPath(from)
-    } yield OperationFailure(s"Failed to remove ${fromBlobPath.path}", cause)
+    } yield ActionFailed(s"Failed to remove ${fromBlobPath.path}", cause)
 
   private def copyBlobs(from: ParsedPath, to: ParsedPath) = forEachBlobIn(from) { fromBlob =>
     (for {
-      toBlobPath <- EitherT.right[OperationFailure](relativize(fromBlob, from, to))
-      toBlob     <- EitherT.right[OperationFailure](endpoint.toBlob(toBlobPath))
+      toBlobPath <- EitherT.right[ActionFailed](relativize(fromBlob, from, to))
+      toBlob     <- EitherT.right[ActionFailed](endpoint.toBlob(toBlobPath))
       _          <- EitherT(fs.copyContent(fromBlob, toBlob)).leftSemiflatMap(e => copyFailure(fromBlob, toBlob, e))
     } yield ()).value
   }
 
   private def moveBlobs(from: ParsedPath, to: ParsedPath) = forEachBlobIn(from) { fromBlob =>
     (for {
-      toBlobPath <- EitherT.right[OperationFailure](relativize(fromBlob, from, to))
-      toBlob     <- EitherT.right[OperationFailure](endpoint.toBlob(toBlobPath))
+      toBlobPath <- EitherT.right[ActionFailed](relativize(fromBlob, from, to))
+      toBlob     <- EitherT.right[ActionFailed](endpoint.toBlob(toBlobPath))
       _          <- EitherT(fs.copyContent(fromBlob, toBlob)).leftSemiflatMap(e => copyFailure(fromBlob, toBlob, e))
       _          <- EitherT(fs.remove(fromBlob)).leftSemiflatMap(e => removeFailure(fromBlob, e))
     } yield ()).value
@@ -87,8 +87,15 @@ class FileSystemEngine[F[_]: Monad, B, K](
       .value
   }
 
+  private def countBlobs(path: ParsedPath) = forEachBlobIn[Unit](path) { _ =>
+    Monad[F].pure{
+      val a: Either[ActionFailed, Unit] = Right(())
+      a
+    }
+  }
+
   private val runFsAction =
-    new ActionInterpret[F, ParsedPath, Seq[(OperationDescription, Either[Fatal with Aggregate, OperationResult])]] {
+    new ActionInterpret[F, ParsedPath, Seq[(OperationDescription, Either[Fatal with Aggregate, EvaluationSummary])]] {
       override def run(term: Action[ParsedPath]) = term match {
 
         case Copy(fromPaths, to) =>
@@ -116,12 +123,20 @@ class FileSystemEngine[F[_]: Monad, B, K](
               showFrom <- endpoint.showPath(from)
             } yield OperationDescription(s"Remove from $showFrom") -> ops
           }
+
+        case Count(inPaths) =>
+          par.traverse(inPaths) { in =>
+            for {
+              ops    <- countBlobs(in)
+              showIn <- endpoint.showPath(in)
+            } yield OperationDescription(s"Count blobs in $showIn") -> ops
+          }
       }
     }
 
   def evaluate(
     expression: Expression[ParsedPath]
-  ): F[Either[AggregatedFatal, Map[OperationDescription, OperationResult]]] =
+  ): F[Either[AggregatedFatal, Map[OperationDescription, EvaluationSummary]]] =
     for {
       interpreted <- ActionInterpret.interpret(expression)(Monad[F], runFsAction)
       (failures, succeeds) = interpreted

@@ -23,9 +23,10 @@ final case class And[P](left: Expression[P], right: Expression[P]) extends Expre
 final case class Copy[P](from: Seq[P], to: P)                      extends Expression[P] with Action[P]
 final case class Move[P](from: Seq[P], to: P)                      extends Expression[P] with Action[P]
 final case class Remove[P](from: Seq[P])                           extends Expression[P] with Action[P]
+final case class Count[P](in: Seq[P])                              extends Expression[P] with Action[P]
 
-final case class OperationFailure(msg: String, th: Throwable)
-final case class OperationResult(succeed: Long, errors: Vector[OperationFailure])
+final case class ActionFailed(msg: String, th: Throwable)
+final case class EvaluationSummary(succeed: Long, errors: Vector[ActionFailed])
 
 object types {
   type CREDS = Map[(Account, Container), Secret]

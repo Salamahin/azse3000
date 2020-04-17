@@ -1,5 +1,7 @@
 package com.aswatson.aswrdm.azse3000
 
+import java.time.Instant
+
 import com.aswatson.aswrdm.azse3000.azure.{AzureEndpoints, AzureFlatListingFileSystem, AzureRecursiveListingFileSystem}
 import com.aswatson.aswrdm.azse3000.configurable.{Config, FlatLimited, Recursive}
 import com.aswatson.aswrdm.azse3000.expression.CommandParser
@@ -106,8 +108,15 @@ class ZioProgram {
     } yield result
   }
 
-  private def formatOperationReport(description: OperationDescription, stats: OperationResult) = {
-    def formatFailures(failures: Seq[OperationFailure]) = {
+  private def measure[R, T, E](program: ZIO[R, T, E]) =
+    for {
+      start    <- UIO.succeed(Instant.now)
+      result   <- program
+      duration = java.time.Duration.between(start, Instant.now)
+    } yield (result, duration)
+
+  private def formatOperationReport(description: OperationDescription, stats: EvaluationSummary) = {
+    def formatFailures(failures: Seq[ActionFailed]) = {
       if (failures.isEmpty) "none"
       else "\n" + failures.map(f => s"    * ${f.msg}: ${f.th.getCause}").mkString("\n")
     }
@@ -127,7 +136,7 @@ class ZioProgram {
       }
       .mkString("\n")
 
-  private def formatResults(results: Map[OperationDescription, OperationResult]) = {
+  private def formatResults(results: Map[OperationDescription, EvaluationSummary]) = {
     val report = results
       .map {
         case (descr, stats) => formatOperationReport(descr, stats)
@@ -146,10 +155,14 @@ class ZioProgram {
       .flatMap {
         case (expression, creds) =>
           progressBar {
-            engine(creds, c).evaluate(expression).absolve
+            measure {
+              engine(creds, c).evaluate(expression).absolve
+            }
           }
       }
-      .flatMap(results => putStrLn(formatResults(results)))
+      .flatMap {
+        case (results, duration) => putStrLn(formatResults(results)) *> putStr(s"\nDuration: $duration")
+      }
 
     attempt
       .catchSome {

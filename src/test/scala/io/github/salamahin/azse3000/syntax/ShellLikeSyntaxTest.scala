@@ -15,7 +15,7 @@ class ShellLikeSyntaxTest extends FunSuite with Matchers {
 
   Map(
     "rm cont@acc:/p1/p2@appendix/key=value" -> "rm http://myacc.com/cont/p1/p2@appendix/key=value",
-    "rm cont@{acc1,acc2}:/{p1,p2,p3}"       -> "rm cont@acc1:/p1 cont@acc1:/p2 cont@acc1:/p3 cont@acc2:/p1 cont@acc2:/p2 cont@acc2:/p3"
+    "rm cont@{acc1,acc2}:/{p1,p2,p3}"       -> "rm http://myacc1.com/cont/p1 http://myacc1.com/cont/p2 http://myacc1.com/cont/p3 http://myacc2.com/cont/p1 http://myacc2.com/cont/p2 http://myacc2.com/cont/p3"
   ).foreach {
     case (input, expected) =>
       test(s"can desugar $input") {

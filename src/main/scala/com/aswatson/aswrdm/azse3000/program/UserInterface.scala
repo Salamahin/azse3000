@@ -6,10 +6,10 @@ import com.aswatson.aswrdm.azse3000.expression.ActionInterpret
 import com.aswatson.aswrdm.azse3000.shared.{Expression, _}
 
 class UserInterface[F[_]: Monad](
-  prompt: Prompt[F],
-  syntax: CommandSyntax[F],
-  parse: Parse[F],
-  vault: Vault[F]
+                                  prompt: PromptOperation[F],
+                                  syntax: CommandSyntax[F],
+                                  parse: Parse[F],
+                                  vault: Vault[F]
 ) {
   import cats.instances.either._
   import cats.instances.tuple._

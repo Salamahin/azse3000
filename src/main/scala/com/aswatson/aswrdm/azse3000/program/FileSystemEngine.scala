@@ -8,9 +8,9 @@ import com.aswatson.aswrdm.azse3000.shared._
 import scala.annotation.tailrec
 
 class FileSystemEngine[F[_]: Monad, B, K](
-  endpoint: Endpoint[F, B, K],
-  par: Parallel[F],
-  fs: FileSystem[F, B, K]
+                                           endpoint: EndpointOperation[F, B, K],
+                                           par: Parallel[F],
+                                           fs: FileSystem[F, B, K]
 ) {
 
   import cats.instances.either._

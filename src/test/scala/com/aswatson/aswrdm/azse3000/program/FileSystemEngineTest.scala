@@ -66,7 +66,7 @@ object FileSystemEngineTest {
       }
   }
 
-  class IdEndpoint extends Endpoint[Id, ParsedPath, (Account, Container)] {
+  class IdEndpoint extends EndpointOperation[Id, ParsedPath, (Account, Container)] {
     override def toBlob(p: ParsedPath): Id[ParsedPath] = p
 
     override def toContainer(p: ParsedPath): Id[(Account, Container)] =

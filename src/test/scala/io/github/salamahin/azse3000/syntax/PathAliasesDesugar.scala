@@ -9,9 +9,10 @@ class PathAliasesDesugar extends FunSuite with Matchers {
   )
 
   Map(
-    "rm cont@known:/p1/p2/p3"                        -> "rm https://known.host/cont/p1/p2/p3",
-    "rm cont@unknown:/p1/p2/p3"                      -> "rm cont@unknown:/p1/p2/p3",
-    "rm cont@known:/p1/p2/p3 cont@unknown:/p1/p2/p3" -> "rm https://known.host/cont/p1/p2/p3 cont@unknown:/p1/p2/p3"
+    "rm cont@known:/p1/p2/p3"                                              -> "rm https://known.host/cont/p1/p2/p3",
+    "rm cont@known:/etl/d_hierarchy/data/entity_set=dimensions-store-hier" -> "rm https://known.host/cont/etl/d_hierarchy/data/entity_set=dimensions-store-hier",
+    "rm cont@unknown:/p1/p2/p3"                                            -> "rm cont@unknown:/p1/p2/p3",
+    "rm cont@known:/p1/p2/p3 cont@unknown:/p1/p2/p3"                       -> "rm https://known.host/cont/p1/p2/p3 cont@unknown:/p1/p2/p3"
   ).foreach {
     case (raw, expected) =>
       test(s"$raw should be refined to $expected") {

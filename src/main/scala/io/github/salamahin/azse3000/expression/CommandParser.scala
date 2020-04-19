@@ -10,7 +10,7 @@ object CommandParser extends RegexParsers with PackratParsers {
     (x: Expression[Path], y: Expression[Path]) => And(x, y)
 
   private def path: Parser[Path] =
-    "[\\w@\\-:/.]+".r ^^ { x =>
+    "[\\w@\\-:\\/\\.=]+".r ^^ { x =>
       Path(x)
     }
 

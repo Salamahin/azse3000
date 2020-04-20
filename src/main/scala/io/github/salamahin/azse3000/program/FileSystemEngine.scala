@@ -27,6 +27,7 @@ class FileSystemEngine[F[_]: Monad, B, K](
         case (remains, Nil)                                           => remains
         case (bpHead :: bpTail, rpHead :: rpTail) if bpHead == rpHead => remainedPaths(bpTail, rpTail)
         case (_ :: bpTail, relative)                                  => remainedPaths(bpTail, relative)
+        case (Nil, _)                                                 => Nil
       }
 
     for {

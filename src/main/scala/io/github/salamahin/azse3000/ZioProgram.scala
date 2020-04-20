@@ -117,7 +117,7 @@ class ZioProgram {
   private def formatOperationReport(description: OperationDescription, stats: EvaluationSummary) = {
     def formatFailures(failures: Seq[ActionFailed]) = {
       if (failures.isEmpty) "none"
-      else "\n" + failures.map(f => s"    * ${f.msg}: ${f.th.getCause}").mkString("\n")
+      else "\n" + failures.map(f => s"    * ${f.msg}: ${f.th.getMessage}").mkString("\n")
     }
 
     s"""  * ${description.description}

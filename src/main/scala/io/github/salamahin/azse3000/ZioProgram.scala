@@ -160,13 +160,14 @@ class ZioProgram {
           }
       }
       .flatMap {
-        case (results, duration) => putStrLn(formatResults(results)) *> putStr(s"\nDuration: $duration")
+        case (results, duration) => putStrLn(formatResults(results)) *> putStrLn(s"\nDuration: $duration\n")
       }
 
     attempt
       .catchSome {
         case AggregatedFatal(issues) => putStrLn(s"Failed to interpret:\n${formatIssues(issues)}\n") *> attempt
       }
+      .repeat(Schedule.forever)
       .catchAllCause(
         failure => ZIO.effect(System.err.println(failure.prettyPrint)) *> ZIO.halt(failure)
       )

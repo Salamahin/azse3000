@@ -22,19 +22,19 @@ class FileSystemEngine[F[_]: Monad, B, K](
 
   private def relativize(blob: B, from: ParsedPath, to: ParsedPath): F[ParsedPath] = {
     @tailrec
-    def remainedPaths(blobPaths: List[String], relativeToPaths: List[String]): List[String] =
-      (blobPaths, relativeToPaths) match {
-        case (remains, Nil)                                           => remains
-        case (bpHead :: bpTail, rpHead :: rpTail) if bpHead == rpHead => remainedPaths(bpTail, rpTail)
-        case (_ :: bpTail, relative)                                  => remainedPaths(bpTail, relative)
-        case (Nil, _)                                                 => Nil
-      }
+    def relativize(fullPaths: List[String], relativePaths: List[String]): List[String] =
+    (fullPaths, relativePaths) match {
+      case (remainedFull, Nil)                                      => remainedFull
+      case (lastName @ _ :: Nil, _ :: Nil)                          => lastName
+      case (bpHead :: bpTail, rpHead :: rpTail) if bpHead == rpHead => relativize(bpTail, rpTail)
+      case (_ :: bpTail, remainedRelative)                          => relativize(bpTail, remainedRelative)
+    }
 
     for {
       blobPath            <- endpoint.blobPath(blob)
       blobPathNames       = blobPath.path.split("/").toList
       relativeToPathNames = from.prefix.path.split("/").toList
-      remainedPathNames   = remainedPaths(blobPathNames, relativeToPathNames)
+      remainedPathNames   = relativize(blobPathNames, relativeToPathNames)
       toPathNames         = to.prefix.path.split("/")
     } yield to.copy(prefix = Prefix((toPathNames ++ remainedPathNames).mkString("/")))
   }

@@ -80,12 +80,14 @@ class AzureFileSystemTest extends FlatSpec with ForAllTestDockerContainer with M
     case (descr, fs) =>
       descr should "be able to fetch files in nested dirs" in {
         val foundBlobs = fs.foreachBlob(blobContainer, Prefix("folder1"))(collectPaths)
-        foundBlobs should be('right)
-        foundBlobs.right.get should contain only (
-          azuriteEndpoint.resolve(containerName).resolve(fileA).path,
-          azuriteEndpoint.resolve(containerName).resolve(fileB).path,
-          azuriteEndpoint.resolve(containerName).resolve(fileC).path,
-        )
+        foundBlobs should be(Symbol("right"))
+        foundBlobs.map {
+          _ should contain only (
+            azuriteEndpoint.resolve(containerName).resolve(fileA).path,
+            azuriteEndpoint.resolve(containerName).resolve(fileB).path,
+            azuriteEndpoint.resolve(containerName).resolve(fileC).path,
+          )
+        }
       }
   }
 }

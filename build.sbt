@@ -1,10 +1,9 @@
 name := "azse3000"
 version := "0.1"
 
-scalaVersion := "2.12.8"
+scalaVersion := "2.13.2"
 
 scalacOptions ++= Seq(
-  "-Ypartial-unification",
   "-Xfatal-warnings",
   "-deprecation",
   "-language:postfixOps",

@@ -7,7 +7,7 @@ import io.github.salamahin.azse3000.shared.Parallel
 package object azure {
   private def sequence[A, B](s: Seq[Either[A, B]]): Either[A, Seq[B]] =
     s.foldRight(Right(Nil): Either[A, List[B]]) { (e, acc) =>
-      for (xs <- acc.right; x <- e.right) yield x :: xs
+      for (xs <- acc; x <- e) yield x :: xs
     }
 
   def eitherTPar[F[_]: Monad](par: Parallel[F]): Parallel[EitherT[F, Throwable, *]] =

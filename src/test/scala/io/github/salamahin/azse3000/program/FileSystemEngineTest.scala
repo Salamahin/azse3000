@@ -62,7 +62,7 @@ object FileSystemEngineTest {
       else {
         val allFiles = _files(location)
         val subfiles = allFiles.filter(_.prefix.path.startsWith(prefix.path))
-        action(subfiles).asRight
+        action(subfiles.toSeq).asRight
       }
   }
 
@@ -120,7 +120,7 @@ class FileSystemEngineTest extends FunSuite with Matchers with BeforeAndAfter {
   }
 
   test("can copy blobs") {
-    action.evaluate(Copy(paths.source.a_b :: Nil, paths.dest.e_f_g)) should be('right)
+    action.evaluate(Copy(paths.source.a_b :: Nil, paths.dest.e_f_g)) should be(Symbol("right"))
     fs.files should contain only (
       paths.initial.a_b_c_d,
       paths.initial.a_b_c,
@@ -130,7 +130,7 @@ class FileSystemEngineTest extends FunSuite with Matchers with BeforeAndAfter {
   }
 
   test("can move blobs") {
-    action.evaluate(Move(paths.source.a_b :: Nil, paths.dest.e_f_g)) should be('right)
+    action.evaluate(Move(paths.source.a_b :: Nil, paths.dest.e_f_g)) should be(Symbol("right"))
     fs.files should contain only (
       paths.expected.e_f_g_c,
       paths.expected.e_f_g_c_d
@@ -138,20 +138,20 @@ class FileSystemEngineTest extends FunSuite with Matchers with BeforeAndAfter {
   }
 
   test("can remove blobs") {
-    action.evaluate(Remove(paths.source.a_b :: Nil)) should be('right)
-    fs.files should be('empty)
+    action.evaluate(Remove(paths.source.a_b :: Nil)) should be(Symbol("right"))
+    fs.files should be(Symbol("empty"))
   }
 
   test("failure on container listing is fatal") {
     fs.failOnList("acc", "cont")
 
-    action.evaluate(Remove(paths.source.a_b :: Nil)) should be('left)
+    action.evaluate(Remove(paths.source.a_b :: Nil)) should be(Symbol("left"))
   }
 
   test("copy of a bad blob is not fatal") {
     fs.failOnCopy(paths.initial.a_b_c)
 
-    action.evaluate(Copy(paths.source.a_b :: Nil, paths.dest.e_f_g)) should be('right)
+    action.evaluate(Copy(paths.source.a_b :: Nil, paths.dest.e_f_g)) should be(Symbol("right"))
     fs.files should contain only (
       paths.initial.a_b_c,
       paths.initial.a_b_c_d,
@@ -163,7 +163,7 @@ class FileSystemEngineTest extends FunSuite with Matchers with BeforeAndAfter {
     fs.failOnCopy(paths.initial.a_b_c)
     fs.failOnRemove(paths.initial.a_b_c_d)
 
-    action.evaluate(Move(paths.source.a_b :: Nil, paths.dest.e_f_g)) should be('right)
+    action.evaluate(Move(paths.source.a_b :: Nil, paths.dest.e_f_g)) should be(Symbol("right"))
     fs.files should contain only (
       paths.initial.a_b_c,
       paths.initial.a_b_c_d,
@@ -174,7 +174,7 @@ class FileSystemEngineTest extends FunSuite with Matchers with BeforeAndAfter {
   test("remove of a bad blob is not fatal") {
     fs.failOnRemove(paths.initial.a_b_c)
 
-    action.evaluate(Remove(paths.source.a_b :: Nil)) should be('right)
+    action.evaluate(Remove(paths.source.a_b :: Nil)) should be(Symbol("right"))
     fs.files should contain only (
       paths.initial.a_b_c
     )

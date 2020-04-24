@@ -31,7 +31,7 @@ class AzureFlatListingFileSystem[F[_]: Monad](batchSize: Int, par: Parallel[F]) 
         }
 
     def getBlobs(rs: ResultSegment[ListBlobItem]) = {
-      import scala.collection.JavaConverters._
+      import scala.jdk.CollectionConverters._
 
       rs.getResults
         .asScala

@@ -13,7 +13,7 @@ class AzureRecursiveListingFileSystem[F[_]: Monad](
   ): F[Either[Throwable, Seq[U]]] = {
     import cats.syntax.either._
 
-    import scala.collection.JavaConverters._
+    import scala.jdk.CollectionConverters._
 
     def init() = {
       EitherT

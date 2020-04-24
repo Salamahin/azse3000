@@ -7,13 +7,10 @@ import org.jline.reader.{LineReader, LineReaderBuilder}
 import org.jline.terminal.{Terminal, TerminalBuilder}
 
 object Test extends App {
-//  System.setProperty("org.jline.terminal.dumb", "true")
-//  System.setProperty("jansi.passthrough", "true")
 
   val terminal: Terminal =
     TerminalBuilder
       .builder
-//        .jansi(true)
       .build
 
   val historyFile = new File(".azse3000_history")
@@ -22,13 +19,11 @@ object Test extends App {
     val lineReader: LineReader = LineReaderBuilder
       .builder
       .terminal(terminal)
-      //      .parser(parser)
       .variable(LineReader.HISTORY_FILE, historyFile)
       .history(new DefaultHistory())
       .appName("hui")
       .build
 
-//    lineReader.unsetOpt(LineReader.Option.INSERT_TAB)
     lineReader
   }
 

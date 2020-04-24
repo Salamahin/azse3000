@@ -3,13 +3,17 @@ package io.github.salamahin.azse3000.azure
 import java.net.URI
 
 import cats.Id
-import com.dimafeng.testcontainers.{FixedHostPortGenericContainer, Container => DockerContainer, ForAllTestContainer => ForAllTestDockerContainer}
+import com.dimafeng.testcontainers.{
+  FixedHostPortGenericContainer,
+  Container => DockerContainer,
+  ForAllTestContainer => ForAllTestDockerContainer
+}
 import com.microsoft.azure.storage.StorageCredentialsAccountAndKey
 import com.microsoft.azure.storage.blob._
 import io.github.salamahin.azse3000.azure.AzureFileSystemTest.AzuritePath
 import io.github.salamahin.azse3000.program
 import io.github.salamahin.azse3000.shared.Prefix
-import org.scalatest.{BeforeAndAfter, FunSuite, Matchers}
+import org.scalatest.{BeforeAndAfter, FlatSpec, Matchers}
 
 object AzureFileSystemTest {
   class AzuritePath(val path: String) {
@@ -18,7 +22,7 @@ object AzureFileSystemTest {
   }
 }
 
-class AzureFileSystemTest extends FunSuite with ForAllTestDockerContainer with Matchers with BeforeAndAfter {
+class AzureFileSystemTest extends FlatSpec with ForAllTestDockerContainer with Matchers with BeforeAndAfter {
   private val storageAcc      = "devstoreaccount1"
   private val storageKey      = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
   private val blobStoragePort = 10000
@@ -64,7 +68,7 @@ class AzureFileSystemTest extends FunSuite with ForAllTestDockerContainer with M
   val fileB                             = "folder1/folder2/b"
   val fileC                             = "folder1/folder2/c"
 
-  before {
+  "a blob container" should "exist" in {
     blobContainer = createBlobContainer(containerName)
     touch(blobContainer, fileA, fileB, fileC)
   }
@@ -74,7 +78,7 @@ class AzureFileSystemTest extends FunSuite with ForAllTestDockerContainer with M
     "flat listing fs" -> new AzureFlatListingFileSystem[Id](1, program.parId)
   ).foreach {
     case (descr, fs) =>
-      test(s"$descr is able to fetch files in nested dirs") {
+      descr should "be able to fetch files in nested dirs" in {
         val foundBlobs = fs.foreachBlob(blobContainer, Prefix("folder1"))(collectPaths)
         foundBlobs should be('right)
         foundBlobs.right.get should contain only (

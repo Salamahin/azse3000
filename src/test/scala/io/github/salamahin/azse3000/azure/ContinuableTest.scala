@@ -3,7 +3,8 @@ package io.github.salamahin.azse3000.azure
 import cats.Id
 import io.github.salamahin.azse3000.azure.ContinuableTest.Continuation
 import io.github.salamahin.azse3000.program
-import org.scalatest.{FunSuite, Matchers}
+import org.scalatest.funsuite.AnyFunSuite
+import org.scalatest.matchers.should.Matchers
 
 import scala.annotation.tailrec
 
@@ -11,7 +12,7 @@ object ContinuableTest {
   case class Continuation(value: Int, next: Option[Continuation])
 }
 
-class ContinuableTest extends FunSuite with Matchers {
+class ContinuableTest extends AnyFunSuite with Matchers {
   private def continuation(limit: Int): Continuation = {
 
     @tailrec

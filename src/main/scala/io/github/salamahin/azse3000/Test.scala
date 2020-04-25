@@ -15,17 +15,27 @@ object Test extends App {
 
   val historyFile = new File(".azse3000_history")
 
-  def reader(terminal: Terminal): LineReader = {
-    val lineReader: LineReader = LineReaderBuilder
-      .builder
-      .terminal(terminal)
-      .variable(LineReader.HISTORY_FILE, historyFile)
-      .history(new DefaultHistory())
-      .appName("hui")
-      .build
+  val reader = LineReaderBuilder
+    .builder
+    .terminal(terminal)
+    .variable(LineReader.HISTORY_FILE, historyFile)
+    .history(new DefaultHistory())
+    .appName("hui")
+    .build
 
-    lineReader
-  }
+  new Thread(() => {
 
-  reader(terminal).readLine("> ")
+    while(!Thread.interrupted()) {
+      Thread.sleep(1000)
+      reader.callWidget(LineReader.CLEAR)
+      terminal.writer().println( "test" );
+      reader.callWidget(LineReader.REDRAW_LINE)
+      reader.callWidget(LineReader.REDISPLAY)
+    }
+
+  })
+    .start()
+
+  reader.readLine("> ")
+
 }

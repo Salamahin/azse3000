@@ -22,7 +22,7 @@ libraryDependencies ++= Seq(
 //  "org.jline"              % "jline"                     % "jline-terminal-jansi"
 )
 
-libraryDependencies += "org.scalatest" %% "scalatest"                      % "3.0.8"  % Test
+libraryDependencies += "org.scalatest" %% "scalatest"                      % "3.1.1"  % Test
 libraryDependencies += "com.dimafeng"  %% "testcontainers-scala-scalatest" % "0.36.1" % Test
 
 addCompilerPlugin("org.typelevel" %% "kind-projector"     % "0.11.0" cross CrossVersion.full)

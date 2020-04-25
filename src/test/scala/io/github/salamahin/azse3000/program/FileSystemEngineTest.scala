@@ -3,7 +3,9 @@ package io.github.salamahin.azse3000.program
 import cats.Id
 import io.github.salamahin.azse3000.program.FileSystemEngineTest.{IdEndpoint, InMemoryIdFileSystem}
 import io.github.salamahin.azse3000.shared._
-import org.scalatest.{BeforeAndAfter, FunSuite, Matchers}
+import org.scalatest.BeforeAndAfter
+import org.scalatest.funsuite.AnyFunSuite
+import org.scalatest.matchers.should.Matchers
 
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
@@ -82,7 +84,7 @@ object FileSystemEngineTest {
   }
 }
 
-class FileSystemEngineTest extends FunSuite with Matchers with BeforeAndAfter {
+class FileSystemEngineTest extends AnyFunSuite with Matchers with BeforeAndAfter {
 
   object paths {
     object source {
@@ -128,7 +130,7 @@ class FileSystemEngineTest extends FunSuite with Matchers with BeforeAndAfter {
       paths.expected.e_f_g_c_d
     )
   }
-
+ 1
   test("can move blobs") {
     action.evaluate(Move(paths.source.a_b :: Nil, paths.dest.e_f_g)) should be(Symbol("right"))
     fs.files should contain only (

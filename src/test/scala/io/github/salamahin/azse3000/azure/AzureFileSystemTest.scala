@@ -3,17 +3,15 @@ package io.github.salamahin.azse3000.azure
 import java.net.URI
 
 import cats.Id
-import com.dimafeng.testcontainers.{
-  FixedHostPortGenericContainer,
-  Container => DockerContainer,
-  ForAllTestContainer => ForAllTestDockerContainer
-}
+import com.dimafeng.testcontainers.{FixedHostPortGenericContainer, Container => DockerContainer, ForAllTestContainer => ForAllTestDockerContainer}
 import com.microsoft.azure.storage.StorageCredentialsAccountAndKey
 import com.microsoft.azure.storage.blob._
 import io.github.salamahin.azse3000.azure.AzureFileSystemTest.AzuritePath
 import io.github.salamahin.azse3000.program
 import io.github.salamahin.azse3000.shared.Prefix
-import org.scalatest.{BeforeAndAfter, FlatSpec, Matchers}
+import org.scalatest.BeforeAndAfter
+import org.scalatest.flatspec.AnyFlatSpec
+import org.scalatest.matchers.should.Matchers
 
 object AzureFileSystemTest {
   class AzuritePath(val path: String) {
@@ -22,7 +20,7 @@ object AzureFileSystemTest {
   }
 }
 
-class AzureFileSystemTest extends FlatSpec with ForAllTestDockerContainer with Matchers with BeforeAndAfter {
+class AzureFileSystemTest extends AnyFlatSpec with ForAllTestDockerContainer with Matchers with BeforeAndAfter {
   private val storageAcc      = "devstoreaccount1"
   private val storageKey      = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
   private val blobStoragePort = 10000
@@ -79,15 +77,12 @@ class AzureFileSystemTest extends FlatSpec with ForAllTestDockerContainer with M
   ).foreach {
     case (descr, fs) =>
       descr should "be able to fetch files in nested dirs" in {
-        val foundBlobs = fs.foreachBlob(blobContainer, Prefix("folder1"))(collectPaths)
-        foundBlobs should be(Symbol("right"))
-        foundBlobs.map {
-          _ should contain only (
-            azuriteEndpoint.resolve(containerName).resolve(fileA).path,
-            azuriteEndpoint.resolve(containerName).resolve(fileB).path,
-            azuriteEndpoint.resolve(containerName).resolve(fileC).path,
-          )
-        }
+        val Right(foundBlobs) = fs.foreachBlob(blobContainer, Prefix("folder1"))(collectPaths)
+        foundBlobs should contain only (
+          azuriteEndpoint.resolve(containerName).resolve(fileA).path,
+          azuriteEndpoint.resolve(containerName).resolve(fileB).path,
+          azuriteEndpoint.resolve(containerName).resolve(fileC).path
+        )
       }
   }
 }

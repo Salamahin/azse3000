@@ -2,9 +2,10 @@ package io.github.salamahin.azse3000.syntax
 
 import cats.Id
 import io.github.salamahin.azse3000.shared.Command
-import org.scalatest.{FunSuite, Matchers}
+import org.scalatest.funsuite.AnyFunSuite
+import org.scalatest.matchers.should.Matchers
 
-class ShellLikeSyntaxTest extends FunSuite with Matchers {
+class ShellLikeSyntaxTest extends AnyFunSuite with Matchers {
   val syntax = new ShellLikeSyntax[Id](
     Map(
       "acc"  -> "http://myacc.com",

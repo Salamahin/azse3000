@@ -3,9 +3,10 @@ package io.github.salamahin.azse3000.expression
 import cats.Id
 import cats.kernel.Semigroup
 import io.github.salamahin.azse3000.shared._
-import org.scalatest.{FunSuite, Matchers}
+import org.scalatest.funsuite.AnyFunSuite
+import org.scalatest.matchers.should.Matchers
 
-class CommandParserTest extends FunSuite with Matchers {
+class CommandParserTest extends AnyFunSuite with Matchers {
   import CommandParserTest._
 
   private val primitives = Seq(

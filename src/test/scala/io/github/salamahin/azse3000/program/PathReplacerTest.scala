@@ -1,9 +1,10 @@
 package io.github.salamahin.azse3000.program
 
 import io.github.salamahin.azse3000.shared._
-import org.scalatest.{FunSuite, Matchers}
+import org.scalatest.funsuite.AnyFunSuite
+import org.scalatest.matchers.should.Matchers
 
-class PathReplacerTest extends FunSuite with Matchers {
+class PathReplacerTest extends AnyFunSuite with Matchers {
   private val rawPath1 = Path("cont@acc:/p1")
   private val rawPath2 = Path("cont@acc:/p2")
   private val rawPath3 = Path("cont@acc:/p3")

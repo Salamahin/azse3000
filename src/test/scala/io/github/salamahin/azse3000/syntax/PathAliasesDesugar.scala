@@ -1,9 +1,10 @@
 package io.github.salamahin.azse3000.syntax
 
 import io.github.salamahin.azse3000.shared.Command
-import org.scalatest.{FunSuite, Matchers}
+import org.scalatest.funsuite.AnyFunSuite
+import org.scalatest.matchers.should.Matchers
 
-class PathAliasesDesugar extends FunSuite with Matchers {
+class PathAliasesDesugar extends AnyFunSuite with Matchers {
   val knownHosts = Map(
     "known" -> "https://known.host"
   )

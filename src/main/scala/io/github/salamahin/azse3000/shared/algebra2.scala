@@ -1,6 +1,7 @@
 package io.github.salamahin.azse3000.shared
 
 import cats.InjectK
+import com.microsoft.azure.storage.blob.CloudBlockBlob
 
 sealed trait UI[T]
 final case class PromptCommand()                                       extends UI[Command]
@@ -17,8 +18,24 @@ final case class ReadCreds(acc: Account, cont: Container) extends Config[Option[
 sealed trait Interpret[T]
 final case class CollectPath(expr: Expression[ParsedPath]) extends Interpret[Seq[ParsedPath]]
 
-//sealed trait Azure[T]
-//final case class StartListing(acc: Account, cont: Container, sas: Secret) extends Azure[]
+final case class ListingSegment()
+
+sealed trait Azure[T]
+final case class Relativize(from: ParsedPath, to: ParsedPath, toSecret: Secret, blob: CloudBlockBlob)
+    extends Azure[CloudBlockBlob]
+final case class ListBlobs(acc: Account, cont: Container, prefix: Prefix, secret: Secret)
+    extends Azure[Seq[CloudBlockBlob]]
+
+final case class AzureEngine[F[_]]()(implicit inj: InjectK[Azure, F]) {
+//  def copy(blobs: Seq[CloudBlockBlob], to: ParsedPath, secrets: CREDS) = ExecStrategy(inj(Copy(blobs, to, secrets)))
+//  def remove(blobs: Seq[CloudBlockBlob])                               = ExecStrategy(inj(Remove(blobs)))
+//  def move(blobs: Seq[CloudBlockBlob], to: ParsedPath, secrets: CREDS) = ExecStrategy(inj(Move(blobs, to, secrets)))
+//
+  def relativize(from: ParsedPath, to: ParsedPath, toSecret: Secret, blob: CloudBlockBlob) =
+    ExecStrategy(inj(Relativize(from, to, toSecret, blob)))
+  def list(acc: Account, cont: Container, prefix: Prefix, secret: Secret) =
+    ExecStrategy(inj(ListBlobs(acc, cont, prefix, secret)))
+}
 
 final case class UserInterface[F[_]]()(implicit inj: InjectK[UI, F]) {
   def promptCommand                                         = ExecStrategy(inj(PromptCommand()))

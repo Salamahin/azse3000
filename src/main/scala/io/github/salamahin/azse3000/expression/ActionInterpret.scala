@@ -27,6 +27,6 @@ object ActionInterpret {
   def interpret[F[_]: Monad, P, T](expression: Expression[P])(implicit int: ActionInterpret[F, P, T]): F[Vector[T]] =
     new ActionInterpretImpl[F, P, T].run(expression)(int)
 
-  def interpret2[F[_]: Monad, P, T](expression: Expression[P])(int: ActionInterpret[F, P, T]): F[Vector[T]] =
+  def interpret2[F[_]: Monad, P, T](int: ActionInterpret[F, P, T])(expression: Expression[P]): F[Vector[T]] =
     new ActionInterpretImpl[F, P, T].run(expression)(int)
 }

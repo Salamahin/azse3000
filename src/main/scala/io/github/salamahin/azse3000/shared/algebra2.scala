@@ -9,7 +9,7 @@ final case class ShowProgress(op: OperationDescription, progress: Int) extends U
 
 sealed trait Parse2[T]
 final case class ParsePath(p: Path)         extends Parse2[ParsedPath]
-final case class ParseCommand(cmd: Command) extends Parse2[Expression[ParsedPath]]
+final case class ParseCommand(cmd: Command) extends Parse2[Either[InvalidCommand, Expression[ParsedPath]]]
 
 sealed trait Config[T]
 final case class ReadCreds(acc: Account, cont: Container) extends Config[Option[Secret]]
@@ -17,21 +17,24 @@ final case class ReadCreds(acc: Account, cont: Container) extends Config[Option[
 sealed trait Interpret[T]
 final case class CollectPath(expr: Expression[ParsedPath]) extends Interpret[Seq[ParsedPath]]
 
-final case class UserInterface[F[_]](implicit inj: InjectK[UI, F]) {
-  def promptCommand: ExecStrategy[F, Command]                             = ExecStrategy(inj(PromptCommand()))
-  def promptCreds(acc: Account, cont: Container): ExecStrategy[F, Secret] = ExecStrategy(inj(PromptCreds(acc, cont)))
-  def showProgress(op: OperationDescription, progress: Int): ExecStrategy[F, Unit] = ExecStrategy(inj(ShowProgress(op, progress)))
+//sealed trait Azure[T]
+//final case class StartListing(acc: Account, cont: Container, sas: Secret) extends Azure[]
+
+final case class UserInterface[F[_]]()(implicit inj: InjectK[UI, F]) {
+  def promptCommand                                         = ExecStrategy(inj(PromptCommand()))
+  def promptCreds(acc: Account, cont: Container)            = ExecStrategy(inj(PromptCreds(acc, cont)))
+  def showProgress(op: OperationDescription, progress: Int) = ExecStrategy(inj(ShowProgress(op, progress)))
 }
 
-final case class Parser[F[_]](implicit inj: InjectK[Parse2, F]) {
+final case class Parser[F[_]]()(implicit inj: InjectK[Parse2, F]) {
   def parsePath(p: Path)         = ExecStrategy(inj(ParsePath(p)))
   def parseCommand(cmd: Command) = ExecStrategy(inj(ParseCommand(cmd)))
 }
 
-final case class Configuration[F[_]](implicit inj: InjectK[Config, F]) {
+final case class Configuration[F[_]]()(implicit inj: InjectK[Config, F]) {
   def readCreds(acc: Account, cont: Container) = ExecStrategy(inj(ReadCreds(acc, cont)))
 }
 
-final case class Interpretation[F[_]](implicit inj: InjectK[Interpret, F]) {
+final case class Interpretation[F[_]]()(implicit inj: InjectK[Interpret, F]) {
   def colletPaths(expr: Expression[ParsedPath]) = ExecStrategy(inj(CollectPath(expr)))
 }

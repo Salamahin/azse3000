@@ -1,7 +1,7 @@
 package io.github.salamahin.azse3000.shared
 
 import cats.Monad
-import cats.free.Free
+import cats.data.{EitherT, OptionT}
 import cats.free.Free._
 
 object UiProgram {
@@ -13,32 +13,33 @@ object UiProgram {
     parser: Parser[F],
     configuration: Configuration[F],
     interpretation: Interpretation[F]
-  ): Program[F, Unit] =
-    for {
-      cmd   <- ui.promptCommand.seq.asProgramStep
-      expr  <- parser.parseCommand(cmd).seq.asProgramStep
-      paths <- interpretation.colletPaths(expr).seq.asProgramStep
+  ) =
+    (for {
+      cmd   <- EitherT.right[InvalidCommand](ui.promptCommand.seq.asProgramStep)
+      expr  <- EitherT(parser.parseCommand(cmd).seq.asProgramStep)
+      paths <- EitherT.right[InvalidCommand](interpretation.colletPaths(expr).seq.asProgramStep)
 
-      secrets <- paths
-                  .groupBy(p => (p.account, p.container))
-                  .toVector
-                  .traverse {
-                    case ((acc, cont), paths) =>
-                      configuration
-                        .readCreds(acc, cont)
-                        .seq
-                        .flatMap(
-                          maybeCreds =>
-                            maybeCreds
-                              .map(aaa => Free.pure[F, Secret](aaa))
-                              .getOrElse(ui.promptCreds(acc, cont).seq)
-                        )
-                        .map { secret =>
-                          paths.map(_ -> secret)
-                        }
-                        .asProgramStep
-                  }
-                  .map(_.flatten.toMap)
+      secrets <- {
+        val secrets = paths
+          .groupBy(p => (p.account, p.container))
+          .keys
+          .toVector
+          .traverse {
+            case id @ (acc, cont) =>
+              OptionT
+                .liftF(configuration.readCreds(acc, cont).seq)
+                .getOrElseF(ui.promptCreds(acc, cont).seq)
+                .map(secret => id -> secret)
+                .asProgramStep
+          }
+          .map(_.toMap)
 
-    } yield ()
+        EitherT.right[InvalidCommand](secrets)
+      }
+
+
+
+//    _ <- ActionInterpret.interpret2(expr)(new ActionInterpret[F, ParsedPath, EvaluationSummary])
+
+    } yield ()).value
 }

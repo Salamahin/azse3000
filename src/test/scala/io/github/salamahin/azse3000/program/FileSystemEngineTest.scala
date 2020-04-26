@@ -130,7 +130,7 @@ class FileSystemEngineTest extends AnyFunSuite with Matchers with BeforeAndAfter
       paths.expected.e_f_g_c_d
     )
   }
- 1
+
   test("can move blobs") {
     action.evaluate(Move(paths.source.a_b :: Nil, paths.dest.e_f_g)) should be(Symbol("right"))
     fs.files should contain only (

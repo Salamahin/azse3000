@@ -3,10 +3,10 @@ package io.github.salamahin.azse3000.shared
 import cats.Monad
 import cats.data.{EitherT, OptionT}
 import cats.free.Free._
-import com.microsoft.azure.storage.blob.CloudBlockBlob
+import com.microsoft.azure.storage.ResultSegment
+import com.microsoft.azure.storage.blob.{CloudBlockBlob, ListBlobItem}
 import io.github.salamahin.azse3000.expression.ActionInterpret2
 import io.github.salamahin.azse3000.shared.types.CREDS
-import zio.Fiber.Id
 
 object UiProgram {
   import ExecStrategy._
@@ -41,29 +41,50 @@ object UiProgram {
         }
         .map(_.toMap)
 
-    def copyBlob(from: ParsedPath, fromBlob: CloudBlockBlob, to: ParsedPath, secrets: CREDS) = {
-      val startCopy = EitherT(azure.relativize(from, fromBlob, to, secrets(to.account, to.container)).seq)
-        .map { toBlob =>
-          toBlob.startCopy(fromBlob)
-          toBlob
-        }
+    def startBlobCopying(from: ParsedPath, fromBlob: CloudBlockBlob, to: ParsedPath, secrets: CREDS) =
+      for {
+        toBlob <- EitherT(azure.relativize(from, fromBlob, to, secrets(to.account, to.container)).seq)
+        _      = toBlob.startCopy(fromBlob) //fixme use free
+      } yield toBlob
 
-//      def waitUntilCopied = concurrentController.delayCopyStatusCheck().seq *> blob
+    def listAndProcessBLobs[T](rs: ResultSegment[ListBlobItem])(f: CloudBlockBlob => ExecStrategy[F, T]) = {
+      import scala.jdk.CollectionConverters._
 
-//      for {
-//        toBlob <- azure
-//                   .relativize(from, fromBlob, to, secrets(to.account, to.container))
-//                   .seq
-//                   .map { toBlob =>
-//                     toBlob.startCopy(fromBlob)
-//                     toBlob
-//                   }
-////          .map(identity)
-////          .iterateUntil(_.getCopyState.getStatus == CopyStatus.PENDING)
-//
-//      } yield ()
+      Monad[Program[F, *]].tailRecM(rs, Vector.empty[T]) {
+        case (segment, acc) =>
+          val allBlobs = rs
+            .getResults
+            .asScala
+            .map(_.asInstanceOf[CloudBlockBlob])
+            .toVector
+            .traverse(f(_).par)
+            .map(acc ++ _)
+            .asProgramStep
+
+          val token = segment.getContinuationToken
+
+          if (token == null) allBlobs.map(_.asRight[(ResultSegment[ListBlobItem], Vector[T])])
+          else
+            for {
+              nextToken <- azure.continueListing(token).seq.asProgramStep
+              bbs       <- allBlobs
+              next      = (nextToken, bbs).asLeft[Vector[T]]
+            } yield next
+      }
     }
 
+    def startListing(from: ParsedPath, to: ParsedPath, creds: CREDS) = {
+      import scala.jdk.CollectionConverters._
+
+      for {
+        tkn <- EitherT(azure.startListing(from, creds((to.account, to.container))).seq)
+        blobs = tkn
+          .getResults
+          .asScala
+          .map(_.asInstanceOf[CloudBlockBlob])
+
+      } yield ()
+    }
 
 //    def relativizeAll(from: ParsedPath, blobs: Seq[CloudBlockBlob], to: ParsedPath, secrets: CREDS) =
 //      for {
@@ -99,27 +120,4 @@ object UiProgram {
       secrets <- EitherT.right[InvalidCommand](collectCreds(paths))
     } yield ()).value
   }
-}
-
-object Aaaa extends App {
-  import cats.implicits._
-  import cats._
-  import cats.instances._
-  import cats.syntax._
-
-  def init() = Monad[Option].pure {
-    println("init")
-    1
-  }
-
-  def inc(v: Int) = Monad[Option].pure(v).map{x =>
-    println(s"inc $x")
-    x + 1
-  }
-
-  for {
-    i <- init().iterateUntil(x => x > 3)
-//    a <- inc(i)
-//    b <- inc(i)
-  } yield ()
 }

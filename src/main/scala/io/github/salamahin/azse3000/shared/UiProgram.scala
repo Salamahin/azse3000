@@ -45,7 +45,7 @@ object UiProgram {
         }
         .map(_.toMap)
 
-    def listAndProcessBLobs[T](from: ParsedPath, to: ParsedPath, creds: CREDS)(
+    def listAndProcessBlobs[T](from: ParsedPath, secret: Secret)(
       f: CloudBlockBlob => ExecStrategy[F, T]
     ) = {
       import scala.jdk.CollectionConverters._
@@ -58,7 +58,7 @@ object UiProgram {
           .traverse(origBlob => f(origBlob).par.map(mappedBlob => (origBlob, mappedBlob))) //fixme maybe parallel traverse required
 
       (for {
-        initial <- EitherT(azure.startListing(from, creds((to.account, to.container))).seq.asProgramStep)
+        initial <- EitherT(azure.startListing(from, secret).seq.asProgramStep)
         blobs <- EitherT.right[FileSystemFailure] {
                   Monad[Program[F, *]].tailRecM(initial, Vector.empty[(CloudBlockBlob, T)]) {
                     case (segment, acc) =>
@@ -137,6 +137,15 @@ object UiProgram {
                 }
             }
       }
+    }
+
+    def copyAll(from: ParsedPath, to: ParsedPath, secrets: CREDS) = {
+      val copyStart = listAndProcessBlobs(
+        from,
+        secrets(from.account, from.container)
+      )(fromBlob => azure.startContentCopying(from, fromBlob, to, secrets(to.account, to.container)))
+
+
     }
 
 //    def copyAll(fromPaths: Seq[ParsedPath], to: ParsedPath, creds: CREDS) = {

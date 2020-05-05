@@ -4,6 +4,12 @@ import cats.InjectK
 import com.microsoft.azure.storage.blob.{CloudBlockBlob, ListBlobItem}
 import com.microsoft.azure.storage.{ResultContinuation, ResultSegment}
 
+sealed trait AzException
+final case class ContainerListingFailed(msg: String, cause: Exception)    extends Exception(msg, cause) with AzException
+final case class BlobCreationFailed(msg: String, cause: Exception)        extends Exception(msg, cause) with AzException
+final case class BlobDeletionFailed(msg: String, cause: Exception)        extends Exception(msg, cause) with AzException
+final case class BlobCopyStatusCheckFailed(msg: String, cause: Exception) extends Exception(msg, cause) with AzException
+
 sealed trait UI[T]
 final case class PromptCommand()                                       extends UI[Command]
 final case class PromptCreds(acc: Account, cont: Container)            extends UI[Secret]
@@ -21,12 +27,12 @@ final case class CollectPath(expr: Expression[ParsedPath]) extends Interpret[Seq
 
 sealed trait Azure[T]
 final case class StartListing(inPath: ParsedPath, secret: Secret)
-    extends Azure[Either[FileSystemFailure, ResultSegment[ListBlobItem]]]
+    extends Azure[Either[ContainerListingFailed, ResultSegment[ListBlobItem]]] //fixme new domain
 final case class ContinueListing(tkn: ResultContinuation) extends Azure[ResultSegment[ListBlobItem]]
 
 final case class StartContentCopying(from: ParsedPath, fromBlob: CloudBlockBlob, to: ParsedPath, toSecret: Secret)
-    extends Azure[Either[FileSystemFailure, CloudBlockBlob]]
-final case class IsCopied(blob: CloudBlockBlob)   extends Azure[Either[Exception, Boolean]] //fixme new domain
+    extends Azure[Either[BlobCreationFailed, CloudBlockBlob]] //fixme new domain
+final case class IsCopied(blob: CloudBlockBlob)   extends Azure[Either[BlobCopyStatusCheckFailed, Boolean]] //fixme new domain
 final case class RemoveBlob(blob: CloudBlockBlob) extends Azure[Unit]
 
 sealed trait Control[T]

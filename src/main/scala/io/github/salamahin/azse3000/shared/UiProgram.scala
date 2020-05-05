@@ -20,7 +20,7 @@ object UiProgram {
     concurrentController: ConcurrentController[F]
   ) = {
     type SRC_DST_BLOBS    = (CloudBlockBlob, CloudBlockBlob)
-    type SRC_DST_CHCK_RES = (CloudBlockBlob, CloudBlockBlob, Either[Exception, Boolean])
+    type SRC_DST_CHCK_RES = (CloudBlockBlob, CloudBlockBlob, Either[BlobCopyStatusCheckFailed, Boolean])
     type CHECK_ITER_ACCS  = (Vector[ActionFailed], Vector[SRC_DST_BLOBS], Long)
 
     val collectPaths =
@@ -57,9 +57,9 @@ object UiProgram {
           .toVector
           .traverse(origBlob => f(origBlob).par.map(mappedBlob => (origBlob, mappedBlob))) //fixme maybe parallel traverse required
 
-      (for {
+      for {
         initial <- EitherT(azure.startListing(from, secret).seq.asProgramStep)
-        blobs <- EitherT.right[FileSystemFailure] {
+        blobs <- EitherT.right[ContainerListingFailed] {
                   Monad[Program[F, *]].tailRecM(initial, Vector.empty[(CloudBlockBlob, T)]) {
                     case (segment, acc) =>
                       val mappedBlobsOfThatSegment = mapBlobs(segment)
@@ -79,7 +79,7 @@ object UiProgram {
                           .asProgramStep
                   }
                 }
-      } yield blobs).value
+      } yield blobs
     }
 
     def separateCopyStatusResults(originalAndCopies: Vector[SRC_DST_CHCK_RES]) = {
@@ -139,32 +139,22 @@ object UiProgram {
       }
     }
 
-    def copyAll(from: ParsedPath, to: ParsedPath, secrets: CREDS) = {
-      val copyStart = listAndProcessBlobs(
-        from,
-        secrets(from.account, from.container)
-      )(fromBlob => azure.startContentCopying(from, fromBlob, to, secrets(to.account, to.container)))
+    def listAndCopyBlobs(from: ParsedPath, to: ParsedPath, secrets: CREDS) =
+      for {
+        copyAttempts <- listAndProcessBlobs(
+                         from,
+                         secrets(from.account, from.container)
+                       )(fromBlob => azure.startContentCopying(from, fromBlob, to, secrets(to.account, to.container)))
 
+        (failedToStartCopyRoutines, startedCopyRoutines) = copyAttempts.map {
+          case (sourceBlob, Left(failure)) =>
+            ActionFailed(s"Failed to initiate a copying of blob ${sourceBlob.getUri} to $to", failure).asLeft
+          case (sourceBlob, Right(destBlob)) => (sourceBlob, destBlob).asRight
+        }.separate
 
-    }
+        copyStats <- EitherT.right[ContainerListingFailed](waitUntilCopied(startedCopyRoutines))
 
-//    def copyAll(fromPaths: Seq[ParsedPath], to: ParsedPath, creds: CREDS) = {
-//      fromPaths
-//        .toVector
-//        .traverse { from => //todo maybe traverse par here
-//          listAndProcessBLobs(from, to, creds)(
-//            azure.startContentCopying(from, _, to, creds(to.account, to.container))
-//          )
-//        }
-//    }
-
-//    def runCommands(secrets: CREDS) =
-//      ActionInterpret2.interpret2[Program[F, (OperationDescription, EvaluationSummary)]] {
-//        case Copy(from, to) => copyAll(from, to, secrets)
-//        case Move(from, to) => ???
-//        case Remove(from)   => ???
-//        case Count(in)      => ???
-//      } _
+      } yield copyStats.copy(errors = copyStats.errors ++ failedToStartCopyRoutines)
 
     (for {
       cmd     <- EitherT.right[InvalidCommand](ui.promptCommand.seq.asProgramStep)

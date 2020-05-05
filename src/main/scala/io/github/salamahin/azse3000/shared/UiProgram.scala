@@ -41,73 +41,95 @@ object UiProgram {
         }
         .map(_.toMap)
 
-    def startBlobCopying(from: ParsedPath, fromBlob: CloudBlockBlob, to: ParsedPath, secrets: CREDS) =
-      for {
-        toBlob <- EitherT(azure.relativize(from, fromBlob, to, secrets(to.account, to.container)).seq)
-        _      = toBlob.startCopy(fromBlob) //fixme use free
-      } yield toBlob
-
-    def listAndProcessBLobs[T](rs: ResultSegment[ListBlobItem])(f: CloudBlockBlob => ExecStrategy[F, T]) = {
+    def listAndProcessBLobs[T](from: ParsedPath, to: ParsedPath, creds: CREDS)(
+      f: CloudBlockBlob => ExecStrategy[F, T]
+    ) = {
       import scala.jdk.CollectionConverters._
 
-      Monad[Program[F, *]].tailRecM(rs, Vector.empty[T]) {
-        case (segment, acc) =>
-          val allBlobs = rs
-            .getResults
-            .asScala
-            .map(_.asInstanceOf[CloudBlockBlob])
-            .toVector
-            .traverse(f(_).par)
-            .map(acc ++ _)
-            .asProgramStep
-
-          val token = segment.getContinuationToken
-
-          if (token == null) allBlobs.map(_.asRight[(ResultSegment[ListBlobItem], Vector[T])])
-          else
-            for {
-              nextToken <- azure.continueListing(token).seq.asProgramStep
-              bbs       <- allBlobs
-              next      = (nextToken, bbs).asLeft[Vector[T]]
-            } yield next
-      }
-    }
-
-    def startListing(from: ParsedPath, to: ParsedPath, creds: CREDS) = {
-      import scala.jdk.CollectionConverters._
-
-      for {
-        tkn <- EitherT(azure.startListing(from, creds((to.account, to.container))).seq)
-        blobs = tkn
-          .getResults
+      def getBlobs(rs: ResultSegment[ListBlobItem]) =
+        rs.getResults
           .asScala
           .map(_.asInstanceOf[CloudBlockBlob])
+          .toVector
+          .traverse(f(_).par) //fixme maybe parallel traverse required
 
-      } yield ()
+      (for {
+        initial <- EitherT(azure.startListing(from, creds((to.account, to.container))).seq.asProgramStep)
+        blobs <- EitherT.right[FileSystemFailure] {
+                  Monad[Program[F, *]].tailRecM(initial, Vector.empty[T]) {
+                    case (segment, acc) =>
+                      val newAcc = getBlobs(segment)
+                      val token  = segment.getContinuationToken
+
+                      if (token == null)
+                        newAcc
+                          .map(x => (x ++ acc).asRight[(ResultSegment[ListBlobItem], Vector[T])])
+                          .asProgramStep
+                      else
+                        azure
+                          .continueListing(token)
+                          .par
+                          .map2(newAcc) { (x, y) =>
+                            (x, y).asLeft[Vector[T]]
+                          }
+                          .asProgramStep
+                  }
+                }
+      } yield blobs).value
     }
 
-//    def relativizeAll(from: ParsedPath, blobs: Seq[CloudBlockBlob], to: ParsedPath, secrets: CREDS) =
-//      for {
-//        _ <- blobs
-//              .toVector
-//              .traverse((azure.relativize(from, _, to, secrets(to.account, to.container))).par)
-//
-//      } yield ()
-//
-//    def copy(from: ParsedPath, to: ParsedPath, secrets: CREDS) =
-//      for {
-//
-//        tkn <- azure
-//                .startListing(from.account, from.container, from.prefix, secrets(from.account, from.container))
-//                .seq
-//                .asProgramStep
-//                .iterateUntilM()
-//
-//      } yield ()
+    def separateCopyBlobStatus(blobs: Vector[(CloudBlockBlob, CloudBlockBlob, Either[FileSystemFailure, Boolean])]) = {
+      def iter(
+        bbs: Vector[(CloudBlockBlob, CloudBlockBlob, Either[Exception, Boolean])],
+        failures: Vector[ActionFailed],
+        pending: Vector[(CloudBlockBlob, CloudBlockBlob)],
+        succeeds: Long
+      ): (Vector[ActionFailed], Vector[(CloudBlockBlob, CloudBlockBlob)], Long) = {
+        bbs match {
+          case Vector.empty => (failures, pending, succeeds)
+
+          case (_, _, Right(true)) +: remains =>
+            iter(remains, failures, pending, succeeds + 1)
+
+          case (fromBlob, toBlob, Right(false)) +: remains =>
+            iter(remains, failures, (fromBlob, toBlob) +: pending, succeeds)
+
+          case (fromBlob, toBlob, Left(failure)) +: remains =>
+            val descr = s"Failed to copy ${fromBlob.getUri} to ${toBlob.getUri}"
+            iter(remains, ActionFailed(descr, failure) +: failures, pending, succeeds)
+        }
+      }
+
+      iter(blobs, Vector.empty, Vector.empty, 0)
+    }
+
+    def waitUntilCopied(blobs: Vector[CloudBlockBlob]) = {
+
+//      Monad[Program[F, *]].tailRecM(blobs) { bbs =>
+      //        bbs
+      //          .traverse(azure.isCopied(_).par)
+      //          .map { bb s =>
+      ////            val (lefts, rights) = bbs.separate
+      ////            val (pending, copied) = rights partition identity
+      ////
+      ////            if(pending.nonEmpty)
+      //          }
+      //      }
+    }
+
+    def copyAll(fromPaths: Seq[ParsedPath], to: ParsedPath, creds: CREDS) = {
+      fromPaths
+        .toVector
+        .traverse { from =>
+          listAndProcessBLobs(from, to, creds)(
+            azure.startContentCopying(from, _, to, creds(to.account, to.container))
+          )
+        }
+    }
 
     def runCommands(secrets: CREDS) =
-      ActionInterpret2.interpret2[Seq[(OperationDescription, EvaluationSummary)]] {
-        case Copy(from, to) => ???
+      ActionInterpret2.interpret2[Program[F, (OperationDescription, EvaluationSummary)]] {
+        case Copy(from, to) => copyAll(from, to, secrets)
         case Move(from, to) => ???
         case Remove(from)   => ???
         case Count(in)      => ???

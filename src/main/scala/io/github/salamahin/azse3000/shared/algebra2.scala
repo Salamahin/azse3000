@@ -20,30 +20,32 @@ sealed trait Interpret[T]
 final case class CollectPath(expr: Expression[ParsedPath]) extends Interpret[Seq[ParsedPath]]
 
 sealed trait Azure[T]
-final case class Relativize(from: ParsedPath,
-                            fromBlob: CloudBlockBlob,
-                            to: ParsedPath,
-                            toSecret: Secret) extends Azure[Either[FileSystemFailure, CloudBlockBlob]]
+final case class StartListing(inPath: ParsedPath, secret: Secret)
+    extends Azure[Either[FileSystemFailure, ResultSegment[ListBlobItem]]]
+final case class ContinueListing(tkn: ResultContinuation) extends Azure[ResultSegment[ListBlobItem]]
 
-final case class StartListing(inPath: ParsedPath,
-                              secret: Secret) extends Azure[Either[FileSystemFailure, ResultSegment[ListBlobItem]]]
-final case class ContinueListing(tkn: ResultContinuation)                              extends Azure[ResultSegment[ListBlobItem]]
-final case class StartContentCopying(fromBlob: CloudBlockBlob, toBlob: CloudBlockBlob) extends Azure[Unit]
-final case class RemoveBlob(blob: CloudBlockBlob)                                      extends Azure[Unit]
-final case class IsCopied(blob: CloudBlockBlob)                                        extends Azure[Boolean]
+final case class StartContentCopying(from: ParsedPath, fromBlob: CloudBlockBlob, to: ParsedPath, toSecret: Secret)
+    extends Azure[Either[FileSystemFailure, CloudBlockBlob]]
+final case class IsCopied(blob: CloudBlockBlob)   extends Azure[Either[Exception, Boolean]] //fixme new domain
+final case class RemoveBlob(blob: CloudBlockBlob) extends Azure[Unit]
 
 sealed trait Control[T]
 final case class DelayCopyStatusCheck() extends Control[Unit]
 
 final case class AzureEngine[F[_]]()(implicit inj: InjectK[Azure, F]) {
-  def relativize(from: ParsedPath, fromBlob: CloudBlockBlob, to: ParsedPath, toSecret: Secret) =
-    ExecStrategy(inj(Relativize(from, fromBlob, to, toSecret)))
 
   def startListing(inPath: ParsedPath, secret: Secret) =
     ExecStrategy(inj(StartListing(inPath, secret)))
 
   def continueListing(tkn: ResultContinuation) =
     ExecStrategy(inj(ContinueListing(tkn)))
+
+  def startContentCopying(from: ParsedPath, fromBlob: CloudBlockBlob, to: ParsedPath, toSecret: Secret) =
+    ExecStrategy(inj(StartContentCopying(from, fromBlob, to, toSecret)))
+
+  def isCopied(blob: CloudBlockBlob) =
+    ExecStrategy(inj(IsCopied(blob)))
+
 }
 
 final case class ConcurrentController[F[_]]()(implicit inj: InjectK[Control, F]) {

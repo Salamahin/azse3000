@@ -17,10 +17,10 @@ object ExecStrategy {
   }
 
   implicit class FreeOps[F[_], A](free: Free[F, A]) {
-    def asProgramStep: Program[F, A] = {
-      free.foldMap[Program[F, *]](new FunctionK[F, Program[F, *]] {
-        override def apply[S](fa: F[S]): Program[F, S] = Free.liftF(FreeApplicative.lift(fa))
-      })
-    }
+    def asProgramStep: Program[F, A] =
+      free
+        .foldMap(new FunctionK[F, Program[F, *]] {
+          override def apply[S](fa: F[S]): Program[F, S] = Free.liftF(FreeApplicative.lift(fa))
+        })
   }
 }

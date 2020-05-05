@@ -19,6 +19,10 @@ object UiProgram {
     azure: AzureEngine[F],
     concurrentController: ConcurrentController[F]
   ) = {
+    type SRC_DST_BLOBS    = (CloudBlockBlob, CloudBlockBlob)
+    type SRC_DST_CHCK_RES = (CloudBlockBlob, CloudBlockBlob, Either[Exception, Boolean])
+    type CHECK_ITER_ACCS  = (Vector[ActionFailed], Vector[SRC_DST_BLOBS], Long)
+
     val collectPaths =
       ActionInterpret2.interpret2[Seq[ParsedPath]]({
         case Copy(from, to) => from :+ to
@@ -46,31 +50,31 @@ object UiProgram {
     ) = {
       import scala.jdk.CollectionConverters._
 
-      def getBlobs(rs: ResultSegment[ListBlobItem]) =
+      def mapBlobs(rs: ResultSegment[ListBlobItem]) =
         rs.getResults
           .asScala
           .map(_.asInstanceOf[CloudBlockBlob])
           .toVector
-          .traverse(f(_).par) //fixme maybe parallel traverse required
+          .traverse(origBlob => f(origBlob).par.map(mappedBlob => (origBlob, mappedBlob))) //fixme maybe parallel traverse required
 
       (for {
         initial <- EitherT(azure.startListing(from, creds((to.account, to.container))).seq.asProgramStep)
         blobs <- EitherT.right[FileSystemFailure] {
-                  Monad[Program[F, *]].tailRecM(initial, Vector.empty[T]) {
+                  Monad[Program[F, *]].tailRecM(initial, Vector.empty[(CloudBlockBlob, T)]) {
                     case (segment, acc) =>
-                      val newAcc = getBlobs(segment)
-                      val token  = segment.getContinuationToken
+                      val mappedBlobsOfThatSegment = mapBlobs(segment)
+                      val token                    = segment.getContinuationToken
 
                       if (token == null)
-                        newAcc
-                          .map(x => (x ++ acc).asRight[(ResultSegment[ListBlobItem], Vector[T])])
+                        mappedBlobsOfThatSegment
+                          .map(x => (x ++ acc).asRight[(ResultSegment[ListBlobItem], Vector[(CloudBlockBlob, T)])])
                           .asProgramStep
                       else
                         azure
                           .continueListing(token)
                           .par
-                          .map2(newAcc) { (x, y) =>
-                            (x, y).asLeft[Vector[T]]
+                          .map2(mappedBlobsOfThatSegment) { (newSegment, mappedBlobs) =>
+                            (newSegment, mappedBlobs).asLeft[Vector[(CloudBlockBlob, T)]]
                           }
                           .asProgramStep
                   }
@@ -78,15 +82,15 @@ object UiProgram {
       } yield blobs).value
     }
 
-    def separateCopyBlobStatus(blobs: Vector[(CloudBlockBlob, CloudBlockBlob, Either[FileSystemFailure, Boolean])]) = {
+    def separateCopyStatusResults(originalAndCopies: Vector[SRC_DST_CHCK_RES]) = {
       def iter(
-        bbs: Vector[(CloudBlockBlob, CloudBlockBlob, Either[Exception, Boolean])],
+        bbs: Vector[SRC_DST_CHCK_RES],
         failures: Vector[ActionFailed],
-        pending: Vector[(CloudBlockBlob, CloudBlockBlob)],
+        pending: Vector[SRC_DST_BLOBS],
         succeeds: Long
-      ): (Vector[ActionFailed], Vector[(CloudBlockBlob, CloudBlockBlob)], Long) = {
+      ): CHECK_ITER_ACCS = {
         bbs match {
-          case Vector.empty => (failures, pending, succeeds)
+          case Vector() => (failures, pending, succeeds)
 
           case (_, _, Right(true)) +: remains =>
             iter(remains, failures, pending, succeeds + 1)
@@ -100,40 +104,58 @@ object UiProgram {
         }
       }
 
-      iter(blobs, Vector.empty, Vector.empty, 0)
+      iter(originalAndCopies, Vector.empty, Vector.empty, 0)
     }
 
-    def waitUntilCopied(blobs: Vector[CloudBlockBlob]) = {
+    def delayCopyStatusCheck[T](result: T) =
+      concurrentController
+        .delayCopyStatusCheck()
+        .seq
+        .asProgramStep
+        .map(_ => result)
 
-//      Monad[Program[F, *]].tailRecM(blobs) { bbs =>
-      //        bbs
-      //          .traverse(azure.isCopied(_).par)
-      //          .map { bb s =>
-      ////            val (lefts, rights) = bbs.separate
-      ////            val (pending, copied) = rights partition identity
-      ////
-      ////            if(pending.nonEmpty)
-      //          }
-      //      }
+    def waitUntilCopied(originalAndCopies: Vector[SRC_DST_BLOBS]) = {
+      Monad[Program[F, *]].tailRecM(Vector.empty[ActionFailed], originalAndCopies, 0: Long) {
+        case (totalFailures, bbs, totalSucceeds) =>
+          bbs
+            .traverse {
+              case (original, copied) => azure.isCopied(copied).par.map(result => (original, copied, result))
+            }
+            .map { checked =>
+              separateCopyStatusResults(checked)
+            }
+            .asProgramStep
+            .flatMap {
+              case (failures, pending, succeeds) =>
+                if (pending.isEmpty) {
+                  Monad[Program[F, *]].pure {
+                    EvaluationSummary(succeeds + totalSucceeds, failures ++ totalFailures).asRight[CHECK_ITER_ACCS]
+                  }
+                } else {
+                  delayCopyStatusCheck(failures ++ totalFailures, pending, succeeds + totalSucceeds)
+                    .map(_.asLeft[EvaluationSummary])
+                }
+            }
+      }
     }
 
-    def copyAll(fromPaths: Seq[ParsedPath], to: ParsedPath, creds: CREDS) = {
-      fromPaths
-        .toVector
-        .traverse { from =>
-          listAndProcessBLobs(from, to, creds)(
-            azure.startContentCopying(from, _, to, creds(to.account, to.container))
-          )
-        }
-    }
+//    def copyAll(fromPaths: Seq[ParsedPath], to: ParsedPath, creds: CREDS) = {
+//      fromPaths
+//        .toVector
+//        .traverse { from => //todo maybe traverse par here
+//          listAndProcessBLobs(from, to, creds)(
+//            azure.startContentCopying(from, _, to, creds(to.account, to.container))
+//          )
+//        }
+//    }
 
-    def runCommands(secrets: CREDS) =
-      ActionInterpret2.interpret2[Program[F, (OperationDescription, EvaluationSummary)]] {
-        case Copy(from, to) => copyAll(from, to, secrets)
-        case Move(from, to) => ???
-        case Remove(from)   => ???
-        case Count(in)      => ???
-      } _
+//    def runCommands(secrets: CREDS) =
+//      ActionInterpret2.interpret2[Program[F, (OperationDescription, EvaluationSummary)]] {
+//        case Copy(from, to) => copyAll(from, to, secrets)
+//        case Move(from, to) => ???
+//        case Remove(from)   => ???
+//        case Count(in)      => ???
+//      } _
 
     (for {
       cmd     <- EitherT.right[InvalidCommand](ui.promptCommand.seq.asProgramStep)

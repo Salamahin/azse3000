@@ -5,8 +5,10 @@ import cats.data.{EitherT, OptionT}
 import cats.free.Free._
 import com.microsoft.azure.storage.ResultSegment
 import com.microsoft.azure.storage.blob.{CloudBlockBlob, ListBlobItem}
-import io.github.salamahin.azse3000.expression.ActionInterpret2
+import io.github.salamahin.azse3000.expression.ActionInterpret
 import io.github.salamahin.azse3000.shared.types.CREDS
+
+import scala.annotation.tailrec
 
 object UiProgram {
   import ExecStrategy._
@@ -24,12 +26,27 @@ object UiProgram {
     type CHECK_ITER_ACCS  = (Vector[ActionFailed], Vector[SRC_DST_BLOBS], Long)
 
     val collectPaths =
-      ActionInterpret2.interpret2[Seq[ParsedPath]]({
+      ActionInterpret.interpret[Seq[ParsedPath]] {
         case Copy(from, to) => from :+ to
         case Move(from, to) => from :+ to
         case Remove(from)   => from
         case Count(in)      => in
-      }) _
+      } _
+
+    def mergeEithers[T, K](eithers: Vector[Either[T, K]]) = {
+      val (failed, succeed) = eithers.separate
+
+      if (failed.isEmpty) succeed.asRight[Vector[T]]
+      else failed.asLeft[Vector[K]]
+    }
+
+    def runActions(creds: CREDS) =
+      ActionInterpret.interpret[Program[F, Either[Vector[ContainerListingFailed], Vector[(Description, Summary)]]]] {
+        case Copy(from, to) => copyAllBlobs(from, to, creds)
+        case Move(from, to) => ???
+        case Remove(from)   => ???
+        case Count(in)      => ???
+      } _
 
     def collectCreds(paths: Seq[ParsedPath]) =
       paths
@@ -83,6 +100,7 @@ object UiProgram {
     }
 
     def separateCopyStatusResults(originalAndCopies: Vector[SRC_DST_CHCK_RES]) = {
+      @tailrec
       def iter(
         bbs: Vector[SRC_DST_CHCK_RES],
         failures: Vector[ActionFailed],
@@ -129,18 +147,18 @@ object UiProgram {
               case (failures, pending, succeeds) =>
                 if (pending.isEmpty) {
                   Monad[Program[F, *]].pure {
-                    EvaluationSummary(succeeds + totalSucceeds, failures ++ totalFailures).asRight[CHECK_ITER_ACCS]
+                    Summary(succeeds + totalSucceeds, failures ++ totalFailures).asRight[CHECK_ITER_ACCS]
                   }
                 } else {
                   delayCopyStatusCheck(failures ++ totalFailures, pending, succeeds + totalSucceeds)
-                    .map(_.asLeft[EvaluationSummary])
+                    .map(_.asLeft[Summary])
                 }
             }
       }
     }
 
     def listAndCopyBlobs(from: ParsedPath, to: ParsedPath, secrets: CREDS) =
-      for {
+      (for {
         copyAttempts <- listAndProcessBlobs(
                          from,
                          secrets(from.account, from.container)
@@ -154,13 +172,32 @@ object UiProgram {
 
         copyStats <- EitherT.right[ContainerListingFailed](waitUntilCopied(startedCopyRoutines))
 
-      } yield copyStats.copy(errors = copyStats.errors ++ failedToStartCopyRoutines)
+        summary = copyStats.copy(errors = copyStats.errors ++ failedToStartCopyRoutines)
+      } yield Description(s"Copy from $from to $to") -> summary).value
+
+    def copyAllBlobs(from: Seq[ParsedPath], to: ParsedPath, secrets: CREDS) =
+      from
+        .toVector
+        .parTraverse(listAndCopyBlobs(_, to, secrets)) //todo par traverse?
+        .map(mergeEithers)
 
     (for {
-      cmd     <- EitherT.right[InvalidCommand](ui.promptCommand.seq.asProgramStep)
-      expr    <- EitherT(parser.parseCommand(cmd).seq.asProgramStep)
+      cmd     <- EitherT.right[AzException with Fatal](ui.promptCommand.seq.asProgramStep)
+      expr    <- EitherT(parser.parseCommand(cmd).seq.asProgramStep).leftWiden[AzException with Fatal]
       paths   = collectPaths(expr).flatten
-      secrets <- EitherT.right[InvalidCommand](collectCreds(paths))
-    } yield ()).value
+      secrets <- EitherT.right[AzException with Fatal](collectCreds(paths))
+      summary <- EitherT {
+                  runActions(secrets)(expr)
+                    .traverse(identity)
+                    .map(mergeEithers)
+                    .map(
+                      _.bimap(
+                        problems => AggregatedFatals(problems.flatten),
+                        summary => summary.flatten.toMap
+                      )
+                    )
+                }.leftWiden[AzException with Fatal]
+
+    } yield summary).value
   }
 }

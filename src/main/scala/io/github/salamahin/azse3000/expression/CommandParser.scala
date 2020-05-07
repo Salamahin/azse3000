@@ -43,10 +43,10 @@ object CommandParser extends RegexParsers with PackratParsers {
         .getOrElse(e1)
   }
 
-  def apply(s: Command): Either[InvalidCommand, Expression[Path]] = {
+  def apply(s: Command): Either[MalformedCommand, Expression[Path]] = {
     parseAll(expr, s.cmd) match {
       case Success(result, _) => Right(result)
-      case NoSuccess(msg, _)  => Left(InvalidCommand(msg))
+      case NoSuccess(msg, _)  => Left(MalformedCommand(msg))
     }
   }
 }

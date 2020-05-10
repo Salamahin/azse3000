@@ -35,6 +35,7 @@ final case class StartListing(inPath: Path, secret: Secret)                     
 final case class ContinueListing(tkn: ResultContinuation)                                 extends Azure[ResultSegment[ListBlobItem]]
 final case class IsCopied(blob: CloudBlockBlob)                                           extends Azure[COPY_STATUS_CHECK_ATTEMPT]
 final case class RemoveBlob(blob: CloudBlockBlob)                                         extends Azure[REMOVE_ATTEMPT]
+final case class SizeOfBlobBytes(blob: CloudBlockBlob)                                    extends Azure[Long]
 final case class StartCopy(src: Path, blob: CloudBlockBlob, dst: Path, dstSecret: Secret) extends Azure[COPY_ATTEMPT]
 
 sealed trait Control[T]
@@ -45,6 +46,7 @@ final case class AzureEngine[F[_]]()(implicit inj: InjectK[Azure, F]) {
   def continueListing(tkn: ResultContinuation)                                 = inj(ContinueListing(tkn))
   def isCopied(blob: CloudBlockBlob)                                           = inj(IsCopied(blob))
   def removeBlob(blob: CloudBlockBlob)                                         = inj(RemoveBlob(blob))
+  def sizeOfBlobBytes(blob: CloudBlockBlob)                                    = inj(SizeOfBlobBytes(blob))
   def startCopy(src: Path, blob: CloudBlockBlob, dst: Path, dstSecret: Secret) =
     inj(StartCopy(src, blob, dst, dstSecret))
 }

@@ -241,6 +241,25 @@ object UiProgram {
         }
         .fold
 
+    def sizeOfAllBlobs(in: Seq[Path], creds: CREDS) = {
+      in.toVector
+        .traverse { f => //todo parallel here?
+          val descr = Description(s"Size of blobs in $f")
+
+          listAndProcessBlobs(f, creds(f.account, f.container)) { blob => azure.sizeOfBlobBytes(blob).liftFA }
+            .map { fetchedSizes =>
+              val (_, sizes) = fetchedSizes.unzip
+              InterpretationReport(descr, SizeSummary(sizes.sum), Vector.empty)
+            }
+            .fold(
+              failure => InterpretationReport(descr, SizeSummary(0), Vector(failure)),
+              identity
+            )
+            .liftFA
+        }
+        .fold
+    }
+
     def runActions(creds: CREDS) =
       ActionInterpret
         .interpret[PRG_STEP[Vector[InterpretationReport]]] {
@@ -248,7 +267,7 @@ object UiProgram {
           case Move(from, to) => moveAllBlobs(from, to, creds)
           case Remove(from)   => removeAllBlobs(from, creds)
           case Count(in)      => countAllBlobs(in, creds)
-          case Size(in)       => ???
+          case Size(in)       => sizeOfAllBlobs(in, creds)
         } _
 
     (for {
@@ -277,6 +296,5 @@ object UiProgram {
         .toRightEitherT[AzseException]
 
     } yield summary).value
-
   }
 }

@@ -22,10 +22,10 @@ final case class Count(in: Seq[Path])                     extends Expression wit
 final case class Size(in: Seq[Path])                      extends Expression with Action
 
 sealed trait Summary
-final case class CopySummary(succeed: Long)       extends AnyVal with Summary
-final case class MoveSummary(succeed: Long)       extends AnyVal with Summary
-final case class RemoveSummary(succeed: Long)     extends AnyVal with Summary
-final case class CountSummary(count: Long)        extends AnyVal with Summary
-final case class SizeSummary(bytes: Long)         extends AnyVal with Summary
-final case class Description(description: String) extends AnyVal
+final case class CopySummary(succeed: Long)   extends Summary
+final case class MoveSummary(succeed: Long)   extends Summary
+final case class RemoveSummary(succeed: Long) extends Summary
+final case class CountSummary(count: Long)    extends Summary
+final case class SizeSummary(bytes: Long)     extends Summary
+final case class Description(description: String)
 final case class InterpretationReport(description: Description, summary: Summary, errors: Vector[AzureFailure])

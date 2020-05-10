@@ -167,24 +167,87 @@ object UiProgram {
       )
     }
 
-    def copyAllBlobs(from: Seq[Path], to: Path, secrets: CREDS) =
+    def removeListedBlobs(blobs: Vector[CloudBlockBlob]) =
+      blobs
+        .traverse { b => //todo parallel here?
+          azure.removeBlob(b).liftFA
+        }
+        .map { attempts =>
+          val (failed, succeed) = attempts.separate
+          (succeed.size, failed)
+        }
+
+    def moveAllBlobs(from: Seq[Path], to: Path, creds: CREDS) =
       from
         .toVector
         .traverse { f => //todo parallel here?
-          listAndCopyBlobs(f, to, secrets).map {
-            case (succeed, failures) =>
-              Description(s"Copy from $f to $to") -> InterpretationReport(CopySummary(succeed.size), failures)
+          val descr = Description(s"Move from $f to $to")
+
+          (for {
+            (successfulCopyAttempts, copyFailures) <- listAndCopyBlobs(f, to, creds)
+            (copiedSourceBlobs, _) = successfulCopyAttempts.unzip
+            (sucessfulyRemoved, removeFailures) <- removeListedBlobs(copiedSourceBlobs).liftFree
+
+            report = InterpretationReport(descr, MoveSummary(sucessfulyRemoved), copyFailures ++ removeFailures)
+          } yield report).liftFA
+        }
+        .fold
+
+    def removeAllBlobs(from: Seq[Path], creds: CREDS) =
+      from
+        .toVector
+        .traverse { f => //todo parallel here?
+          val descr = Description(s"Remove from $f")
+
+          listAndProcessBlobs(f, creds(f.account, f.container)) { blob => azure.removeBlob(blob).liftFA }
+            .map { removings =>
+              val (_, attempts)               = removings.unzip
+              val (removingFailures, succeed) = attempts.separate
+
+              InterpretationReport(descr, RemoveSummary(succeed.size), removingFailures)
+            }
+            .fold(
+              failure => InterpretationReport(descr, RemoveSummary(0), Vector(failure)),
+              identity
+            )
+            .liftFA
+        }
+        .fold
+
+    def copyAllBlobs(from: Seq[Path], to: Path, creds: CREDS) =
+      from
+        .toVector
+        .traverse { f => //todo parallel here?
+          val descr = Description(s"Copy from $f to $to")
+
+          listAndCopyBlobs(f, to, creds).map {
+            case (succeed, failures) => InterpretationReport(descr, CopySummary(succeed.size), failures)
           }.liftFA
+        }
+        .fold
+
+    def countAllBlobs(in: Seq[Path], creds: CREDS) =
+      in.toVector
+        .traverse { f => //todo parallel here?
+          val descr = Description(s"Count in $f")
+
+          listAndProcessBlobs(f, creds(f.account, f.container)) { _ => FreeApplicative.pure(1) }
+            .map(listed => InterpretationReport(descr, CountSummary(listed.size), Vector.empty))
+            .fold(
+              failure => InterpretationReport(descr, CountSummary(0), Vector(failure)),
+              identity
+            )
+            .liftFA
         }
         .fold
 
     def runActions(creds: CREDS) =
       ActionInterpret
-        .interpret[PRG_STEP[Vector[(Description, InterpretationReport)]]] {
+        .interpret[PRG_STEP[Vector[InterpretationReport]]] {
           case Copy(from, to) => copyAllBlobs(from, to, creds)
-          case Move(from, to) => ???
-          case Remove(from)   => ???
-          case Count(in)      => ???
+          case Move(from, to) => moveAllBlobs(from, to, creds)
+          case Remove(from)   => removeAllBlobs(from, creds)
+          case Count(in)      => countAllBlobs(in, creds)
           case Size(in)       => ???
         } _
 

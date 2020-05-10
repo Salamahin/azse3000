@@ -1,18 +1,40 @@
-package io.github.salamahin.azse3000.shared
+package io.github.salamahin.azse3000
 
-import cats.data.OptionT
+import cats.data.{EitherT, OptionT}
 import cats.free.Free._
 import cats.free.FreeApplicative.FA
 import cats.free.{Free, FreeApplicative}
-import cats.{Monad, ~>}
+import cats.{Functor, Monad, ~>}
 import com.microsoft.azure.storage.ResultSegment
 import com.microsoft.azure.storage.blob.{CloudBlockBlob, ListBlobItem}
 import io.github.salamahin.azse3000.expression.ActionInterpret
+import io.github.salamahin.azse3000.shared._
 
-object UiProgram {
+object Program {
 
-  import ExecStrategy._
-  import cats.implicits._
+  implicit class LiftSyntax[F[_], A](fa: F[A]) {
+    def liftFree: Free[F, A] = Free.liftF(fa)
+    def liftFA: FA[F, A]     = FreeApplicative.lift(fa)
+  }
+
+  implicit class MonadSyntax[T](value: T) {
+    def pureMonad[F[_]: Monad] = Monad[F].pure(value)
+  }
+
+  implicit class ToEitherTSyntax[F[_], L, R](either: F[Either[L, R]]) {
+    def toEitherT = EitherT(either)
+  }
+
+  implicit class ToRightEitherTSyntax[F[_]: Functor, A](fa: F[A]) {
+    def toRightEitherT[L] = EitherT.right[L](fa)
+  }
+
+  import cats.instances.either._
+  import cats.instances.vector._
+  import cats.syntax.alternative._
+  import cats.syntax.bifunctor._
+  import cats.syntax.either._
+  import cats.syntax.traverse._
 
   def program[F[_]: Monad](implicit
     ui: UserInterface[F],

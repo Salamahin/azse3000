@@ -15,11 +15,11 @@ object ExecStrategy {
     def pureMonad[F[_]: Monad] = Monad[F].pure(value)
   }
 
-  implicit class AsEitherTSyntax[F[_], L, R](either: F[Either[L, R]]) {
+  implicit class ToEitherTSyntax[F[_], L, R](either: F[Either[L, R]]) {
     def toEitherT = EitherT(either)
   }
 
-  implicit class LiftToEitherTSyntax[F[_]: Functor, A](fa: F[A]) {
+  implicit class ToRightEitherTSyntax[F[_]: Functor, A](fa: F[A]) {
     def toRightEitherT[L] = EitherT.right[L](fa)
   }
 }

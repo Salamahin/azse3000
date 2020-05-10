@@ -8,11 +8,9 @@ import cats.{Monad, ~>}
 import com.microsoft.azure.storage.ResultSegment
 import com.microsoft.azure.storage.blob.{CloudBlockBlob, ListBlobItem}
 import io.github.salamahin.azse3000.expression.ActionInterpret
-import io.github.salamahin.azse3000.shared.types.CREDS
-
-import scala.annotation.tailrec
 
 object UiProgram {
+
   import ExecStrategy._
   import cats.implicits._
 
@@ -23,35 +21,20 @@ object UiProgram {
     azure: AzureEngine[F],
     concurrentController: ConcurrentController[F]
   ) = {
-    type SRC_DST_BLOBS    = (CloudBlockBlob, CloudBlockBlob)
-    type SRC_DST_CHCK_RES = (CloudBlockBlob, CloudBlockBlob, Either[BlobCopyStatusCheckFailed, Boolean])
-    type CHECK_ITER_ACCS  = (Vector[ActionFailed], Vector[SRC_DST_BLOBS], Long)
-    type PRG_STEP[A]      = Free[FA[F, *], A]
+    type PRG_STEP[A]   = Free[FA[F, *], A]
+    type CREDS         = Map[(Account, Container), Secret]
+    type SRC_DST_BLOBS = (CloudBlockBlob, CloudBlockBlob)
 
     val collectPaths =
-      ActionInterpret.interpret[Seq[ParsedPath]] {
+      ActionInterpret.interpret[Seq[Path]] {
         case Copy(from, to) => from :+ to
         case Move(from, to) => from :+ to
         case Remove(from)   => from
         case Count(in)      => in
+        case Size(in)       => in
       } _
 
-    def mergeEithers[T, K](eithers: Vector[Either[T, K]]) = {
-      val (failed, succeed) = eithers.separate
-
-      if (failed.isEmpty) succeed.asRight[Vector[T]]
-      else failed.asLeft[Vector[K]]
-    }
-
-    def runActions(creds: CREDS) =
-      ActionInterpret.interpret[PRG_STEP[Either[Vector[ContainerListingFailed], Vector[(Description, Summary)]]]] {
-        case Copy(from, to) => copyAllBlobs(from, to, creds)
-        case Move(from, to) => ???
-        case Remove(from)   => ???
-        case Count(in)      => ???
-      } _
-
-    def collectCreds(paths: Seq[ParsedPath]) =
+    def collectCreds(paths: Seq[Path]) =
       paths
         .groupBy(p => (p.account, p.container))
         .keys
@@ -64,8 +47,8 @@ object UiProgram {
         }
         .map(_.toMap)
 
-    def listAndProcessBlobs[T](from: ParsedPath, secret: Secret)(
-      f: CloudBlockBlob => FreeApplicative[F, T] //fixme F[T]?
+    def listAndProcessBlobs[T](from: Path, secret: Secret)(
+      f: CloudBlockBlob => FreeApplicative[F, T]
     ) = {
       import scala.jdk.CollectionConverters._
 
@@ -74,7 +57,7 @@ object UiProgram {
           .asScala
           .map(_.asInstanceOf[CloudBlockBlob])
           .toVector
-          .traverse(origBlob => //todo parallel here?
+          .traverse(origBlob => //todo should be parallel
             f(origBlob).map(mappedBlob => (origBlob, mappedBlob))
           )
 
@@ -101,116 +84,116 @@ object UiProgram {
                   azure
                     .continueListing(token)
                     .liftFA
-                    .map2(mappedBlobsOfThatSegment) { (newSegment, mappedBlobs) =>
+                    .map2(mappedBlobsOfThatSegment) { (newSegment, mappedBlobs) => //todo should be parallel
                       (newSegment, mappedBlobs).asLeft[Vector[(CloudBlockBlob, T)]]
                     }
                     .liftFree
             }
-            .toRightEitherT[ContainerListingFailed]
+            .toRightEitherT[AzureFailure]
 
       } yield blobs
     }
 
-    def separateCopyStatusResults(originalAndCopies: Vector[SRC_DST_CHCK_RES]) = {
-      @tailrec
-      def iter(
-        bbs: Vector[SRC_DST_CHCK_RES],
-        failures: Vector[ActionFailed],
-        pending: Vector[SRC_DST_BLOBS],
-        succeeds: Long
-      ): CHECK_ITER_ACCS = {
-        bbs match {
-          case Vector() => (failures, pending, succeeds)
-
-          case (_, _, Right(true)) +: remains =>
-            iter(remains, failures, pending, succeeds + 1)
-
-          case (fromBlob, toBlob, Right(false)) +: remains =>
-            iter(remains, failures, (fromBlob, toBlob) +: pending, succeeds)
-
-          case (fromBlob, toBlob, Left(failure)) +: remains =>
-            val descr = s"Failed to copy ${fromBlob.getUri} to ${toBlob.getUri}"
-            iter(remains, ActionFailed(descr, failure) +: failures, pending, succeeds)
-        }
-      }
-
-      iter(originalAndCopies, Vector.empty, Vector.empty, 0)
-    }
-
-    def waitUntilCopied(originalAndCopies: Vector[SRC_DST_BLOBS])          =
+    def waitUntilCopied(blobs: Vector[SRC_DST_BLOBS]) =
       Monad[PRG_STEP]
-        .tailRecM(Vector.empty[ActionFailed], originalAndCopies, 0: Long) {
-          case (totalFailures, bbs, totalSucceeds) =>
-            bbs
-              .traverse { //todo parallel here?
-                case (original, copied) =>
+        .tailRecM(blobs, Vector.empty[SRC_DST_BLOBS], Vector.empty[AzureFailure]) {
+          case (toCheck, totalSucceed, totalFailures) =>
+            toCheck
+              .traverse {
+                case (srcBlob, dstBlob) => //todo parallel here?
                   azure
-                    .isCopied(copied)
+                    .isCopied(dstBlob)
                     .liftFA
-                    .map(result => (original, copied, result))
+                    .map { checkAttempt =>
+                      (srcBlob, dstBlob) -> checkAttempt
+                    }
               }
-              .map(separateCopyStatusResults)
               .liftFree
-              .flatMap {
-                case (failures, pending, succeeds) =>
-                  if (pending.isEmpty)
-                    Summary(succeeds + totalSucceeds, failures ++ totalFailures)
-                      .asRight[CHECK_ITER_ACCS]
-                      .pureMonad[PRG_STEP]
-                  else
-                    concurrentController
-                      .delayCopyStatusCheck()
-                      .liftFA
-                      .map { _ =>
-                        (failures ++ totalFailures, pending, succeeds + totalSucceeds).asLeft[Summary]
-                      }
-                      .liftFree
+              .flatMap { checks =>
+                val (failed, checked) = checks.map {
+                  case (_, Left(failure))             => failure.asLeft
+                  case (srcAndDstBlobs, Right(true))  => (true, srcAndDstBlobs).asRight
+                  case (srcAndDstBlobs, Right(false)) => (true, srcAndDstBlobs).asRight
+                }.separate
+
+                val (succeed, pending) = checked.partitionMap {
+                  case (true, srcAndDst)  => srcAndDst.asLeft
+                  case (false, srcAndDst) => srcAndDst.asRight
+                }
+
+                val newTotalSucceed  = totalSucceed ++ succeed
+                val newTotalFailures = totalFailures ++ failed
+
+                val iter: PRG_STEP[Either[
+                  (Vector[SRC_DST_BLOBS], Vector[SRC_DST_BLOBS], Vector[AzureFailure]),
+                  (Vector[SRC_DST_BLOBS], Vector[AzureFailure])
+                ]] = if (pending.isEmpty) {
+                  (newTotalSucceed, newTotalFailures)
+                    .asRight[(Vector[SRC_DST_BLOBS], Vector[SRC_DST_BLOBS], Vector[AzureFailure])]
+                    .pureMonad[PRG_STEP]
+                } else {
+                  concurrentController
+                    .delayCopyStatusCheck()
+                    .liftFA
+                    .liftFree
+                    .map { _ => (pending, newTotalSucceed, newTotalFailures).asLeft }
+                }
+
+                iter
               }
         }
 
-    // format: off
-    def listAndCopyBlobs(from: ParsedPath, to: ParsedPath, secrets: CREDS) =
-      (for {
-        copyAttempts <- listAndProcessBlobs(
-          from,
-          secrets(from.account, from.container)
-        ) {
+    def listAndCopyBlobs(from: Path, to: Path, creds: CREDS) = {
+      val listAndCopyAttempt = for {
+        copyAttempts <- listAndProcessBlobs(from, creds(from.account, from.container)) {
           azure
-            .startContentCopying(from, _, to, secrets(to.account, to.container))
+            .startCopy(from, _, to, creds(to.account, to.container))
             .liftFA
         }
 
-        (failedToStartCopyRoutines, startedCopyRoutines) = copyAttempts
-          .map {
-            case (src, Left(failure)) =>
-              ActionFailed(s"Failed to initiate a copying of blob ${src.getUri} to $to", failure).asLeft
+        (failedToInitiateCopy, initiatedCopies) = copyAttempts.map {
+          case (_, Left(failure)) => failure.asLeft[(CloudBlockBlob, CloudBlockBlob)]
+          case (src, Right(dst))  => (src, dst).asRight[AzureFailure]
+        }.separate
 
-            case (src, Right(dst)) => (src, dst).asRight
-          }
-          .separate
+        (successfullyCopied, checkStatusFailed) <- waitUntilCopied(initiatedCopies)
+          .toRightEitherT[AzureFailure]
 
-        summary <- waitUntilCopied(startedCopyRoutines)
-          .map(copyStats => copyStats.copy(errors = copyStats.errors ++ failedToStartCopyRoutines))
-          .toRightEitherT[ContainerListingFailed]
+      } yield (successfullyCopied, failedToInitiateCopy ++ checkStatusFailed)
 
-      } yield Description(s"Copy from $from to $to") -> summary).value
-    // format: on
+      listAndCopyAttempt.fold(
+        listingFailed => (Vector.empty[SRC_DST_BLOBS], Vector(listingFailed)),
+        identity
+      )
+    }
 
-    def copyAllBlobs(from: Seq[ParsedPath], to: ParsedPath, secrets: CREDS) =
+    def copyAllBlobs(from: Seq[Path], to: Path, secrets: CREDS) =
       from
         .toVector
-        .traverse(x => FreeApplicative.lift(listAndCopyBlobs(x, to, secrets))) //todo parallel here?
-        .map(mergeEithers)
+        .traverse { f => //todo parallel here?
+          listAndCopyBlobs(f, to, secrets).map {
+            case (succeed, failures) =>
+              Description(s"Copy from $f to $to") -> InterpretationReport(CopySummary(succeed.size), failures)
+          }.liftFA
+        }
         .fold
 
-
+    def runActions(creds: CREDS) =
+      ActionInterpret
+        .interpret[PRG_STEP[Vector[(Description, InterpretationReport)]]] {
+          case Copy(from, to) => copyAllBlobs(from, to, creds)
+          case Move(from, to) => ???
+          case Remove(from)   => ???
+          case Count(in)      => ???
+          case Size(in)       => ???
+        } _
 
     (for {
       cmd  <-
         ui.promptCommand()
           .liftFA
           .liftFree
-          .toRightEitherT[AzException with Fatal]
+          .toRightEitherT[AzseException]
 
       expr <-
         parser
@@ -218,27 +201,19 @@ object UiProgram {
           .liftFA
           .liftFree
           .toEitherT
-          .leftWiden[AzException with Fatal]
+          .leftWiden[AzseException]
 
       paths = collectPaths(expr).flatten
 
       secrets <- collectCreds(paths)
         .foldMap(λ[F ~> PRG_STEP](_.liftFA.liftFree))
-        .toRightEitherT[AzException with Fatal]
+        .toRightEitherT[AzseException]
 
-      summary <-
-        runActions(secrets)(expr)
-          .traverse(identity)
-          .map(mergeEithers)
-          .map(
-            _.bimap(
-              problems => AggregatedFatals(problems.flatten),
-              summary => summary.flatten.toMap
-            )
-          )
-          .toEitherT
-          .leftWiden[AzException with Fatal]
+      summary <- runActions(secrets)(expr)
+        .traverse(identity)
+        .toRightEitherT[AzseException]
 
     } yield summary).value
+
   }
 }

@@ -2,7 +2,7 @@ package io.github.salamahin.azse3000.shared
 
 sealed trait AzseException
 final case class MalformedCommand(msg: String)               extends Exception(msg) with AzseException
-final case class AzureFailure(msg: String, cause: Exception) extends Exception(msg, cause) with AzseException
+final case class AzureFailure(msg: String, cause: Throwable) extends Exception(msg, cause) with AzseException
 
 final case class Command(cmd: String)    extends AnyVal
 final case class Account(name: String)   extends AnyVal
@@ -29,3 +29,9 @@ final case class CountSummary(count: Long)    extends Summary
 final case class SizeSummary(bytes: Long)     extends Summary
 final case class Description(description: String)
 final case class InterpretationReport(description: Description, summary: Summary, errors: Vector[AzureFailure])
+
+trait Blob
+trait ListingPage[T] {
+  def blobs: Seq[T]
+  def next: Option[ListingPage[T]]
+}

@@ -22,7 +22,7 @@ final case class ReadCreds(acc: Account, cont: Container) extends Config[Option[
 sealed trait Interpret[T]
 final case class CollectPath(expr: Expression) extends Interpret[Seq[Path]]
 
-sealed trait Azure[T]
+sealed trait Azure[T, B]
 object Azure {
 
   type LISTING_ATTEMPT[B]        = Either[AzureFailure, ListingPage[B]]
@@ -30,18 +30,18 @@ object Azure {
   type REMOVE_ATTEMPT            = Either[AzureFailure, Unit]
   type COPY_STATUS_CHECK_ATTEMPT = Either[AzureFailure, Boolean]
 }
-final case class StartListing[B](inPath: Path, secret: Secret)                  extends Azure[LISTING_ATTEMPT[B]]
-final case class ContinueListing[B](prevPage: ListingPage[B])                   extends Azure[ListingPage[B]]
-final case class IsCopied[B](blob: B)                                           extends Azure[COPY_STATUS_CHECK_ATTEMPT]
-final case class RemoveBlob[B](blob: B)                                         extends Azure[REMOVE_ATTEMPT]
-final case class SizeOfBlobBytes[B](blob: B)                                    extends Azure[Long]
-final case class StartCopy[B](src: Path, blob: B, dst: Path, dstSecret: Secret) extends Azure[COPY_ATTEMPT[B]]
+final case class StartListing[B](inPath: Path, secret: Secret)                  extends Azure[LISTING_ATTEMPT[B], B]
+final case class ContinueListing[B](prevPage: ListingPage[B])                   extends Azure[ListingPage[B], B]
+final case class IsCopied[B](blob: B)                                           extends Azure[COPY_STATUS_CHECK_ATTEMPT, B]
+final case class RemoveBlob[B](blob: B)                                         extends Azure[REMOVE_ATTEMPT, B]
+final case class SizeOfBlobBytes[B](blob: B)                                    extends Azure[Long, B]
+final case class StartCopy[B](src: Path, blob: B, dst: Path, dstSecret: Secret) extends Azure[COPY_ATTEMPT[B], B]
 
 sealed trait Control[T]
 final case class DelayCopyStatusCheck() extends Control[Unit]
 
-final case class AzureEngine[F[_], B]()(implicit inj: InjectK[Azure, F]) {
-  def startListing(inPath: Path, secret: Secret)                  = inj(StartListing[B](inPath, secret))
+final case class AzureEngine[F[_], B]()(implicit inj: InjectK[Azure[*, B], F]) {
+  def startListing(inPath: Path, secret: Secret)                  = inj(StartListing(inPath, secret))
   def continueListing(tkn: ListingPage[B])                        = inj(ContinueListing(tkn))
   def isCopied(blob: B)                                           = inj(IsCopied(blob))
   def removeBlob(blob: B)                                         = inj(RemoveBlob(blob))

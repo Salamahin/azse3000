@@ -2,12 +2,7 @@ package io.github.salamahin.azse3000.shared
 
 import cats.InjectK
 import com.microsoft.azure.storage.blob.CloudBlockBlob
-import io.github.salamahin.azse3000.shared.Azure.{
-  COPY_ATTEMPT,
-  COPY_STATUS_CHECK_ATTEMPT,
-  LISTING_ATTEMPT,
-  REMOVE_ATTEMPT
-}
+import io.github.salamahin.azse3000.shared.Azure.{COPY_ATTEMPT, COPY_STATUS_CHECK_ATTEMPT, LISTING_ATTEMPT, REMOVE_ATTEMPT}
 
 sealed trait UI[T]
 final case class PromptCommand()                              extends UI[Command]
@@ -24,7 +19,7 @@ sealed trait Interpret[T]
 final case class CollectPath(expr: Expression) extends Interpret[Seq[Path]]
 
 sealed trait Azure[T]
-object Azure                                                          {
+object Azure {
   type LISTING_ATTEMPT           = Either[AzureFailure, ListingPage]
   type COPY_ATTEMPT              = Either[AzureFailure, CloudBlockBlob]
   type REMOVE_ATTEMPT            = Either[AzureFailure, Unit]
@@ -41,11 +36,11 @@ sealed trait Control[T]
 final case class DelayCopyStatusCheck() extends Control[Unit]
 
 final case class AzureEngine[F[_]]()(implicit inj: InjectK[Azure, F]) {
-  def startListing(inPath: Path, secret: Secret)                               = inj(StartListing(inPath, secret))
-  def continueListing(tkn: ListingPage)                                        = inj(ContinueListing(tkn))
-  def isCopied(blob: CloudBlockBlob)                                           = inj(IsCopied(blob))
-  def removeBlob(blob: CloudBlockBlob)                                         = inj(RemoveBlob(blob))
-  def sizeOfBlobBytes(blob: CloudBlockBlob)                                    = inj(SizeOfBlobBytes(blob))
+  def startListing(inPath: Path, secret: Secret) = inj(StartListing(inPath, secret))
+  def continueListing(tkn: ListingPage)          = inj(ContinueListing(tkn))
+  def isCopied(blob: CloudBlockBlob)             = inj(IsCopied(blob))
+  def removeBlob(blob: CloudBlockBlob)           = inj(RemoveBlob(blob))
+  def sizeOfBlobBytes(blob: CloudBlockBlob)      = inj(SizeOfBlobBytes(blob))
   def startCopy(src: Path, blob: CloudBlockBlob, dst: Path, dstSecret: Secret) =
     inj(StartCopy(src, blob, dst, dstSecret))
 }

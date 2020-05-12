@@ -29,7 +29,7 @@ object ProgramSyntax {
   }
 }
 
-object Program       {
+object Program {
 
   import ProgramSyntax._
   import cats.instances.either._
@@ -83,7 +83,7 @@ object Program       {
             .liftFree
             .toEitherT
 
-        blobs   <-
+        blobs <-
           Monad[PRG_STEP]
             .tailRecM(Some(initial): Option[ListingPage], Vector.empty[(CloudBlockBlob, T)]) {
               case (Some(segment), acc) =>
@@ -160,21 +160,23 @@ object Program       {
 
     def listAndCopyBlobs(from: Path, to: Path, creds: CREDS) = {
       val listAndCopyAttempt = for {
+
         copyAttempts <- listAndProcessBlobs[COPY_ATTEMPT](from, creds(from.account, from.container)) {
           azure
             .startCopy(from, _, to, creds(to.account, to.container))
             .liftFA
         }
 
-        (failedToInitiateCopy, initiatedCopies) = copyAttempts.map {
-          case (_, Left(failure)) => failure.asLeft[SRC_DST_BLOBS]
-          case (src, Right(dst))  => (src, dst).asRight[AzureFailure]
-        }.separate
+        (failed, initiated) = copyAttempts
+          .map {
+            case (_, Left(failure)) => failure.asLeft[SRC_DST_BLOBS]
+            case (src, Right(dst))  => (src, dst).asRight[AzureFailure]
+          }
+          .separate
 
-        (successfullyCopied, checkStatusFailed) <- waitUntilCopied(initiatedCopies)
-          .toRightEitherT[AzureFailure]
+        (successfullyCopied, checkStatusFailed) <- waitUntilCopied(initiated).toRightEitherT[AzureFailure]
 
-      } yield (successfullyCopied, failedToInitiateCopy ++ checkStatusFailed)
+      } yield (successfullyCopied, failed ++ checkStatusFailed)
 
       listAndCopyAttempt.fold(
         listingFailed => (Vector.empty[SRC_DST_BLOBS], Vector(listingFailed)),
@@ -235,9 +237,11 @@ object Program       {
         .traverse { f => //todo parallel here?
           val descr = Description(s"Copy from $f to $to")
 
-          listAndCopyBlobs(f, to, creds).map {
-            case (succeed, failures) => InterpretationReport(descr, CopySummary(succeed.size), failures)
-          }.liftFA
+          listAndCopyBlobs(f, to, creds)
+            .map {
+              case (succeed, failures) => InterpretationReport(descr, CopySummary(succeed.size), failures)
+            }
+            .liftFA
         }
         .fold
 
@@ -286,19 +290,17 @@ object Program       {
         } _
 
     (for {
-      cmd  <-
-        ui.promptCommand()
-          .liftFA
-          .liftFree
-          .toRightEitherT[AzseException]
+      cmd <- ui.promptCommand()
+        .liftFA
+        .liftFree
+        .toRightEitherT[AzseException]
 
-      expr <-
-        parser
-          .parseCommand(cmd)
-          .liftFA
-          .liftFree
-          .toEitherT
-          .leftWiden[AzseException]
+      expr <- parser
+        .parseCommand(cmd)
+        .liftFA
+        .liftFree
+        .toEitherT
+        .leftWiden[AzseException]
 
       paths = collectPaths(expr).flatten
 

@@ -35,6 +35,7 @@ object Program {
   import cats.instances.either._
   import cats.instances.vector._
   import cats.syntax.alternative._
+  import cats.syntax.apply._
   import cats.syntax.bifunctor._
   import cats.syntax.either._
   import cats.syntax.traverse._
@@ -72,7 +73,7 @@ object Program {
         }
         .map(_.toMap)
 
-    def listAndProcessBlobs[T](from: Path, secret: Secret)(
+    def listAndProcessBlobs[T](from: Path, secret: Secret, descr: Description)(
       f: CloudBlockBlob => FA[F, T]
     ) = {
       for {
@@ -92,7 +93,7 @@ object Program {
                   .toVector
                   .traverse(origBlob => //todo should be parallel
                     f(origBlob).map(mappedBlob => (origBlob, mappedBlob))
-                  )
+                  ) <* ui.showProgress(Description(s"[Listing...] ${descr.description}"), acc.size).liftFA
 
                 azure
                   .continueListing(segment)
@@ -102,7 +103,12 @@ object Program {
                   }
                   .liftFree
 
-              case (None, acc) => Monad[PRG_STEP].pure(acc.asRight[(Option[ListingPage], Vector[(CloudBlockBlob, T)])])
+              case (None, acc) =>
+                ui
+                  .showProgress(descr, acc.size)
+                  .liftFA
+                  .liftFree
+                  .map(_ => acc.asRight[(Option[ListingPage], Vector[(CloudBlockBlob, T)])])
             }
             .toRightEitherT[AzureFailure]
 
@@ -125,11 +131,13 @@ object Program {
               }
               .liftFree
               .flatMap { checks =>
-                val (failed, checked) = checks.map {
-                  case (_, Left(failure))             => failure.asLeft
-                  case (srcAndDstBlobs, Right(true))  => (true, srcAndDstBlobs).asRight
-                  case (srcAndDstBlobs, Right(false)) => (true, srcAndDstBlobs).asRight
-                }.separate
+                val (failed, checked) = checks
+                  .map {
+                    case (_, Left(failure))             => failure.asLeft
+                    case (srcAndDstBlobs, Right(true))  => (true, srcAndDstBlobs).asRight
+                    case (srcAndDstBlobs, Right(false)) => (true, srcAndDstBlobs).asRight
+                  }
+                  .separate
 
                 val (succeed, pending) = checked.partitionMap {
                   case (true, srcAndDst)  => srcAndDst.asLeft
@@ -158,10 +166,10 @@ object Program {
               }
         }
 
-    def listAndCopyBlobs(from: Path, to: Path, creds: CREDS) = {
+    def listAndCopyBlobs(from: Path, to: Path, creds: CREDS, descr: Description) = {
       val listAndCopyAttempt = for {
 
-        copyAttempts <- listAndProcessBlobs[COPY_ATTEMPT](from, creds(from.account, from.container)) {
+        copyAttempts <- listAndProcessBlobs[COPY_ATTEMPT](from, creds(from.account, from.container), descr) {
           azure
             .startCopy(from, _, to, creds(to.account, to.container))
             .liftFA
@@ -201,7 +209,7 @@ object Program {
           val descr = Description(s"Move from $f to $to")
 
           (for {
-            (successfulCopyAttempts, copyFailures) <- listAndCopyBlobs(f, to, creds)
+            (successfulCopyAttempts, copyFailures) <- listAndCopyBlobs(f, to, creds, descr)
             (copiedSourceBlobs, _) = successfulCopyAttempts.unzip
             (sucessfulyRemoved, removeFailures) <- removeListedBlobs(copiedSourceBlobs).liftFree
 
@@ -216,7 +224,7 @@ object Program {
         .traverse { f => //todo parallel here?
           val descr = Description(s"Remove from $f")
 
-          listAndProcessBlobs(f, creds(f.account, f.container)) { blob => azure.removeBlob(blob).liftFA }
+          listAndProcessBlobs(f, creds(f.account, f.container), descr) { blob => azure.removeBlob(blob).liftFA }
             .map { removings =>
               val (_, attempts)               = removings.unzip
               val (removingFailures, succeed) = attempts.separate
@@ -237,7 +245,7 @@ object Program {
         .traverse { f => //todo parallel here?
           val descr = Description(s"Copy from $f to $to")
 
-          listAndCopyBlobs(f, to, creds)
+          listAndCopyBlobs(f, to, creds, descr)
             .map {
               case (succeed, failures) => InterpretationReport(descr, CopySummary(succeed.size), failures)
             }
@@ -250,7 +258,7 @@ object Program {
         .traverse { f => //todo parallel here?
           val descr = Description(s"Count in $f")
 
-          listAndProcessBlobs(f, creds(f.account, f.container)) { _ => FreeApplicative.pure(1) }
+          listAndProcessBlobs(f, creds(f.account, f.container), descr) { _ => FreeApplicative.pure(1) }
             .map(listed => InterpretationReport(descr, CountSummary(listed.size), Vector.empty))
             .fold(
               failure => InterpretationReport(descr, CountSummary(0), Vector(failure)),
@@ -265,7 +273,7 @@ object Program {
         .traverse { f => //todo parallel here?
           val descr = Description(s"Size of blobs in $f")
 
-          listAndProcessBlobs(f, creds(f.account, f.container)) { blob => azure.sizeOfBlobBytes(blob).liftFA }
+          listAndProcessBlobs(f, creds(f.account, f.container), descr) { blob => azure.sizeOfBlobBytes(blob).liftFA }
             .map { fetchedSizes =>
               val (_, sizes) = fetchedSizes.unzip
               InterpretationReport(descr, SizeSummary(sizes.sum), Vector.empty)

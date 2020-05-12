@@ -5,7 +5,9 @@ import cats.free.Free._
 import cats.free.FreeApplicative.FA
 import cats.free.{Free, FreeApplicative}
 import cats.{Functor, Monad, ~>}
+import com.microsoft.azure.storage.blob.CloudBlockBlob
 import io.github.salamahin.azse3000.expression.ActionInterpret
+import io.github.salamahin.azse3000.shared.Azure.COPY_ATTEMPT
 import io.github.salamahin.azse3000.shared._
 
 object ProgramSyntax {
@@ -28,6 +30,7 @@ object ProgramSyntax {
 }
 
 object Program       {
+
   import ProgramSyntax._
   import cats.instances.either._
   import cats.instances.vector._
@@ -36,16 +39,16 @@ object Program       {
   import cats.syntax.either._
   import cats.syntax.traverse._
 
-  def program[F[_]: Monad, B](implicit
+  def program[F[_]: Monad](implicit
     ui: UserInterface[F],
     parser: Parser[F],
     configuration: Configuration[F],
-    azure: AzureEngine[F, B],
+    azure: AzureEngine[F],
     concurrentController: ConcurrentController[F]
   ) = {
     type PRG_STEP[A]   = Free[FA[F, *], A]
     type CREDS         = Map[(Account, Container), Secret]
-    type SRC_DST_BLOBS = (B, B)
+    type SRC_DST_BLOBS = (CloudBlockBlob, CloudBlockBlob)
 
     val collectPaths =
       ActionInterpret.interpret[Seq[Path]] {
@@ -70,9 +73,8 @@ object Program       {
         .map(_.toMap)
 
     def listAndProcessBlobs[T](from: Path, secret: Secret)(
-      f: B => FreeApplicative[F, T]
+      f: CloudBlockBlob => FA[F, T]
     ) = {
-
       for {
         initial <-
           azure
@@ -83,8 +85,8 @@ object Program       {
 
         blobs   <-
           Monad[PRG_STEP]
-            .tailRecM(initial, Vector.empty[(B, T)]) {
-              case (segment, acc) =>
+            .tailRecM(Some(initial): Option[ListingPage], Vector.empty[(CloudBlockBlob, T)]) {
+              case (Some(segment), acc) =>
                 val mappedBlobsOfThatSegment = segment
                   .blobs
                   .toVector
@@ -92,21 +94,15 @@ object Program       {
                     f(origBlob).map(mappedBlob => (origBlob, mappedBlob))
                   )
 
-                segment
-                  .next
-                  .map { s =>
-                    azure
-                      .continueListing(s)
-                      .liftFA
-                      .map2(mappedBlobsOfThatSegment) { (newSegment, mappedBlobs) => //todo should be parallel
-                        (newSegment, mappedBlobs).asLeft[Vector[(B, T)]]
-                      }
-                  }
-                  .getOrElse {
-                    mappedBlobsOfThatSegment
-                      .map(x => (x ++ acc).asRight[(ListingPage[B], Vector[(B, T)])])
+                azure
+                  .continueListing(segment)
+                  .liftFA
+                  .map2(mappedBlobsOfThatSegment) { (newSegment, mappedBlobs) => //todo should be parallel
+                    (newSegment, acc ++ mappedBlobs).asLeft[Vector[(CloudBlockBlob, T)]]
                   }
                   .liftFree
+
+              case (None, acc) => Monad[PRG_STEP].pure(acc.asRight[(Option[ListingPage], Vector[(CloudBlockBlob, T)])])
             }
             .toRightEitherT[AzureFailure]
 
@@ -164,14 +160,14 @@ object Program       {
 
     def listAndCopyBlobs(from: Path, to: Path, creds: CREDS) = {
       val listAndCopyAttempt = for {
-        copyAttempts <- listAndProcessBlobs(from, creds(from.account, from.container)) {
+        copyAttempts <- listAndProcessBlobs[COPY_ATTEMPT](from, creds(from.account, from.container)) {
           azure
             .startCopy(from, _, to, creds(to.account, to.container))
             .liftFA
         }
 
         (failedToInitiateCopy, initiatedCopies) = copyAttempts.map {
-          case (_, Left(failure)) => failure.asLeft[(B, B)]
+          case (_, Left(failure)) => failure.asLeft[SRC_DST_BLOBS]
           case (src, Right(dst))  => (src, dst).asRight[AzureFailure]
         }.separate
 
@@ -186,7 +182,7 @@ object Program       {
       )
     }
 
-    def removeListedBlobs(blobs: Vector[B]) =
+    def removeListedBlobs(blobs: Vector[CloudBlockBlob]) =
       blobs
         .traverse { b => //todo parallel here?
           azure.removeBlob(b).liftFA

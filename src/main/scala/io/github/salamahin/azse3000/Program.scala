@@ -87,7 +87,7 @@ object Program {
                   .toVector
                   .traverse(origBlob => //todo should be parallel
                     f(origBlob).map(mappedBlob => (origBlob, mappedBlob))
-                  ) <* ui.showProgress(Description(s"[Listing...] ${descr.description}"), acc.size).liftFA
+                  ) <* ui.showProgress(descr, acc.size, false).liftFA
 
                 azure
                   .continueListing(segment)
@@ -99,7 +99,7 @@ object Program {
 
               case (None, acc) =>
                 ui
-                  .showProgress(descr, acc.size)
+                  .showProgress(descr, acc.size, true)
                   .liftFree
                   .map(_ => acc.asRight[(Option[ListingPage], Vector[(CloudBlockBlob, T)])])
             }

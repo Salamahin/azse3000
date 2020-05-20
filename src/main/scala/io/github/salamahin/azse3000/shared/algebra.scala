@@ -5,9 +5,9 @@ import com.microsoft.azure.storage.blob.CloudBlockBlob
 import io.github.salamahin.azse3000.shared.Azure.{COPY_ATTEMPT, COPY_STATUS_CHECK_ATTEMPT, LISTING_ATTEMPT, REMOVE_ATTEMPT}
 
 sealed trait UI[T]
-final case class PromptCommand()                              extends UI[Command]
-final case class PromptCreds(acc: Account, cont: Container)   extends UI[Secret]
-final case class ShowProgress(op: Description, progress: Int) extends UI[Unit]
+final case class PromptCommand()                                                 extends UI[Command]
+final case class PromptCreds(acc: Account, cont: Container)                      extends UI[Secret]
+final case class ShowProgress(op: Description, progress: Int, complete: Boolean) extends UI[Unit]
 
 sealed trait Parse[T]
 final case class ParseCommand(cmd: Command) extends Parse[Either[MalformedCommand, Expression]]
@@ -49,7 +49,7 @@ final case class ConcurrentController[F[_]]()(implicit inj: InjectK[Control, F])
 final case class UserInterface[F[_]]()(implicit inj: InjectK[UI, F]) {
   def promptCommand()                              = inj(PromptCommand())
   def promptCreds(acc: Account, cont: Container)   = inj(PromptCreds(acc, cont))
-  def showProgress(op: Description, progress: Int) = inj(ShowProgress(op, progress))
+  def showProgress(op: Description, progress: Int, complete: Boolean) = inj(ShowProgress(op, progress, complete))
 }
 
 final case class Parser[F[_]]()(implicit inj: InjectK[Parse, F]) {

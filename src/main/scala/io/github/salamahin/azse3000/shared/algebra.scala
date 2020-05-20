@@ -15,9 +15,6 @@ final case class ParseCommand(cmd: Command) extends Parse[Either[MalformedComman
 sealed trait Vault[T]
 final case class ReadCreds(acc: Account, cont: Container) extends Vault[Option[Secret]]
 
-sealed trait Interpret[T]
-final case class CollectPath(expr: Expression) extends Interpret[Seq[Path]]
-
 sealed trait Azure[T]
 object Azure {
   type LISTING_ATTEMPT           = Either[AzureFailure, ListingPage]

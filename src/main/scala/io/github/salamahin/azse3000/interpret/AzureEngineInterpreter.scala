@@ -1,21 +1,23 @@
-package io.github.salamahin.azse3000
-
-import java.net.URI
+package io.github.salamahin.azse3000.interpret
 
 import cats.~>
+import com.microsoft.azure.storage.ResultSegment
 import com.microsoft.azure.storage.blob.{CloudBlobContainer, CloudBlockBlob, CopyStatus, ListBlobItem}
-import com.microsoft.azure.storage.{ResultSegment, StorageCredentialsSharedAccessSignature}
 import io.github.salamahin.azse3000.shared._
 import zio.{Task, UIO}
 
-object AzureEngineInterpreter extends (Azure ~> UIO) {
+class AzureEngineInterpreter(
+  container: (Path, Secret) => CloudBlobContainer,
+  blob: (Path, Secret) => CloudBlockBlob,
+  maxFetchResults: Int
+) extends (Azure ~> UIO) {
 
   private def listBlobs(cont: CloudBlobContainer, prefix: Prefix, rs: Option[ResultSegment[ListBlobItem]]) =
     cont.listBlobsSegmented(
       prefix.path,
       true,
       null,
-      5000,
+      maxFetchResults,
       rs.map(_.getContinuationToken).orNull,
       null,
       null
@@ -33,18 +35,6 @@ object AzureEngineInterpreter extends (Azure ~> UIO) {
       if (!rs.getHasMoreResults) None
       else Some(new ListingPageImpl(cont, prefix, listBlobs(cont, prefix, Some(rs))))
   }
-
-  private def container(inPath: Path, secret: Secret) =
-    new CloudBlobContainer(
-      URI.create(s"https://${inPath.account.name}.blob.core.windows.net/${inPath.container.name}"),
-      new StorageCredentialsSharedAccessSignature(secret.secret)
-    )
-
-  private def blob(dst: Path, secret: Secret) =
-    new CloudBlockBlob(
-      URI.create(s"https://${dst.account.name}.blob.core.windows.net/${dst.container.name}/${dst.prefix.path}"),
-      new StorageCredentialsSharedAccessSignature(secret.secret)
-    )
 
   override def apply[A](fa: Azure[A]) =
     fa match {

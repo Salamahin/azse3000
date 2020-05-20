@@ -43,7 +43,7 @@ object Program {
   def program[F[_]: Monad](implicit
     ui: UserInterface[F],
     parser: Parser[F],
-    configuration: Configuration[F],
+    vault: VaultStorage[F],
     azure: AzureEngine[F],
     concurrentController: ConcurrentController[F]
   ) = {
@@ -67,8 +67,8 @@ object Program {
         .toVector
         .traverse {
           case id @ (acc, cont) =>
-            OptionT(Free.liftF(configuration.readCreds(acc, cont)))
-              .getOrElseF(Free.liftF(ui.promptCreds(acc, cont)))
+            OptionT(vault.readCreds(acc, cont).liftFree)
+              .getOrElseF(ui.promptCreds(acc, cont).liftFree)
               .map(secret => id -> secret)
         }
         .map(_.toMap)
@@ -77,15 +77,10 @@ object Program {
       f: CloudBlockBlob => FA[F, T]
     ) = {
       for {
-        initial <-
-          azure
-            .startListing(from, secret)
-            .liftFA
-            .liftFree
-            .toEitherT
+        initial <- azure.startListing(from, secret).liftFree.toEitherT
 
         blobs <-
-          Monad[PRG_STEP]
+          Monad[Free[F, *]]
             .tailRecM(Some(initial): Option[ListingPage], Vector.empty[(CloudBlockBlob, T)]) {
               case (Some(segment), acc) =>
                 val mappedBlobsOfThatSegment = segment
@@ -101,12 +96,11 @@ object Program {
                   .map2(mappedBlobsOfThatSegment) { (newSegment, mappedBlobs) => //todo should be parallel
                     (newSegment, acc ++ mappedBlobs).asLeft[Vector[(CloudBlockBlob, T)]]
                   }
-                  .liftFree
+                  .monad
 
               case (None, acc) =>
                 ui
                   .showProgress(descr, acc.size)
-                  .liftFA
                   .liftFree
                   .map(_ => acc.asRight[(Option[ListingPage], Vector[(CloudBlockBlob, T)])])
             }
@@ -116,7 +110,7 @@ object Program {
     }
 
     def waitUntilCopied(blobs: Vector[SRC_DST_BLOBS]) =
-      Monad[PRG_STEP]
+      Monad[Free[F, *]]
         .tailRecM(blobs, Vector.empty[SRC_DST_BLOBS], Vector.empty[AzureFailure]) {
           case (toCheck, totalSucceed, totalFailures) =>
             toCheck
@@ -129,7 +123,7 @@ object Program {
                       (srcBlob, dstBlob) -> checkAttempt
                     }
               }
-              .liftFree
+              .monad
               .flatMap { checks =>
                 val (failed, checked) = checks
                   .map {
@@ -147,22 +141,15 @@ object Program {
                 val newTotalSucceed  = totalSucceed ++ succeed
                 val newTotalFailures = totalFailures ++ failed
 
-                val iter: PRG_STEP[Either[
-                  (Vector[SRC_DST_BLOBS], Vector[SRC_DST_BLOBS], Vector[AzureFailure]),
-                  (Vector[SRC_DST_BLOBS], Vector[AzureFailure])
-                ]] = if (pending.isEmpty) {
+                if (pending.isEmpty)
                   (newTotalSucceed, newTotalFailures)
                     .asRight[(Vector[SRC_DST_BLOBS], Vector[SRC_DST_BLOBS], Vector[AzureFailure])]
-                    .pureMonad[PRG_STEP]
-                } else {
+                    .pureMonad[Free[F, *]]
+                else
                   concurrentController
                     .delayCopyStatusCheck()
-                    .liftFA
                     .liftFree
                     .map { _ => (pending, newTotalSucceed, newTotalFailures).asLeft }
-                }
-
-                iter
               }
         }
 
@@ -211,7 +198,7 @@ object Program {
           (for {
             (successfulCopyAttempts, copyFailures) <- listAndCopyBlobs(f, to, creds, descr)
             (copiedSourceBlobs, _) = successfulCopyAttempts.unzip
-            (sucessfulyRemoved, removeFailures) <- removeListedBlobs(copiedSourceBlobs).liftFree
+            (sucessfulyRemoved, removeFailures) <- removeListedBlobs(copiedSourceBlobs).monad
 
             report = InterpretationReport(descr, MoveSummary(sucessfulyRemoved), copyFailures ++ removeFailures)
           } yield report).liftFA
@@ -289,7 +276,7 @@ object Program {
 
     def runActions(creds: CREDS) =
       ActionInterpret
-        .interpret[PRG_STEP[Vector[InterpretationReport]]] {
+        .interpret[Free[F, Vector[InterpretationReport]]] {
           case Copy(from, to) => copyAllBlobs(from, to, creds)
           case Move(from, to) => moveAllBlobs(from, to, creds)
           case Remove(from)   => removeAllBlobs(from, creds)
@@ -299,13 +286,11 @@ object Program {
 
     (for {
       cmd <- ui.promptCommand()
-        .liftFA
         .liftFree
         .toRightEitherT[AzseException]
 
       expr <- parser
         .parseCommand(cmd)
-        .liftFA
         .liftFree
         .toEitherT
         .leftWiden[AzseException]
@@ -313,7 +298,7 @@ object Program {
       paths = collectPaths(expr).flatten
 
       secrets <- collectCreds(paths)
-        .foldMap(λ[F ~> PRG_STEP](_.liftFA.liftFree))
+        .foldMap(λ[F ~> Free[F, *]](_.liftFree))
         .toRightEitherT[AzseException]
 
       summary <- runActions(secrets)(expr)

@@ -12,8 +12,8 @@ final case class ShowProgress(op: Description, progress: Int) extends UI[Unit]
 sealed trait Parse[T]
 final case class ParseCommand(cmd: Command) extends Parse[Either[MalformedCommand, Expression]]
 
-sealed trait Config[T]
-final case class ReadCreds(acc: Account, cont: Container) extends Config[Option[Secret]]
+sealed trait Vault[T]
+final case class ReadCreds(acc: Account, cont: Container) extends Vault[Option[Secret]]
 
 sealed trait Interpret[T]
 final case class CollectPath(expr: Expression) extends Interpret[Seq[Path]]
@@ -59,6 +59,6 @@ final case class Parser[F[_]]()(implicit inj: InjectK[Parse, F]) {
   def parseCommand(cmd: Command) = inj(ParseCommand(cmd))
 }
 
-final case class Configuration[F[_]]()(implicit inj: InjectK[Config, F]) {
+final case class VaultStorage[F[_]]()(implicit inj: InjectK[Vault, F]) {
   def readCreds(acc: Account, cont: Container) = inj(ReadCreds(acc, cont))
 }

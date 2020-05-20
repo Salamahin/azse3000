@@ -140,15 +140,20 @@ object Program {
                 val newTotalSucceed  = totalSucceed ++ succeed
                 val newTotalFailures = totalFailures ++ failed
 
+                type ITER = Free[F, Either[
+                  (Vector[SRC_DST_BLOBS], Vector[SRC_DST_BLOBS], Vector[AzureFailure]),
+                  (Vector[SRC_DST_BLOBS], Vector[AzureFailure])
+                ]]
+
                 if (pending.isEmpty)
                   (newTotalSucceed, newTotalFailures)
                     .asRight[(Vector[SRC_DST_BLOBS], Vector[SRC_DST_BLOBS], Vector[AzureFailure])]
-                    .pureMonad[Free[F, *]]
+                    .pureMonad[Free[F, *]]: ITER
                 else
                   concurrentController
                     .delayCopyStatusCheck()
                     .liftFree
-                    .map { _ => (pending, newTotalSucceed, newTotalFailures).asLeft }
+                    .map { _ => (pending, newTotalSucceed, newTotalFailures).asLeft }: ITER
               }
         }
 

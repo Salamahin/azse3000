@@ -48,8 +48,9 @@ class AzureEngineInterpreter(
 
       case IsCopied(blob) =>
         UIO {
-          import cats.syntax.either._
+          blob.downloadAttributes()
 
+          import cats.syntax.either._
           val cs = blob.getCopyState
           if (cs.getStatus == CopyStatus.SUCCESS) true.asRight
           else if (cs.getStatus == CopyStatus.PENDING) false.asRight

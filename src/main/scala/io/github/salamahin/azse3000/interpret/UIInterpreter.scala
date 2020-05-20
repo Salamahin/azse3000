@@ -26,6 +26,7 @@ class UIInterpreter extends (UI ~> UIO) {
       case PromptCommand()        => UIO { Command(reader.readLine("> ")) }
       case PromptCreds(acc, cont) => UIO { Secret(reader.readLine(s"SAS for ${acc.name}@${cont.name}: ", '*')) }
       case ShowProgress(op, progress) =>
+        //shared state?
         UIO {
           terminal.puts(Capability.clear_screen)
           terminal.writer()

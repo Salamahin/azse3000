@@ -47,7 +47,6 @@ object Program {
     azure: AzureEngine[F],
     concurrentController: ConcurrentController[F]
   ) = {
-    type PRG_STEP[A]   = Free[FA[F, *], A]
     type CREDS         = Map[(Account, Container), Secret]
     type SRC_DST_BLOBS = (CloudBlockBlob, CloudBlockBlob)
 

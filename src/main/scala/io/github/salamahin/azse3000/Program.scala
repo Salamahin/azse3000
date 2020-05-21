@@ -309,6 +309,6 @@ object Program {
         .traverse(identity)
         .toRightEitherT[AzseException]
 
-    } yield summary).value
+    } yield summary.flatten).value
   }
 }

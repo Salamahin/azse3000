@@ -9,37 +9,32 @@ object CommandParser extends RegexParsers with PackratParsers {
   implicit val expSemigroup: Semigroup[Expression] =
     (x: Expression, y: Expression) => And(x, y)
 
-  private def path: Parser[Path] =
-    "[\\w@\\-:\\/\\.=]+".r ^^ { x =>
-//      Path(x)
-      ???
-    }
-
-  private def cp: Parser[Expression] =
-    ("cp" ~> path ~ rep1(path)) ^^ {
+  private def commandWithFrom[T](cmd: String, instance: Seq[Path] => T) = cmd ~> rep1(path) ^^ instance
+  private def commandWithFromAndTo[T](cmd: String, instance: (Seq[Path], Path) => T) =
+    cmd ~> path ~ rep1(path) ^^ {
       case p ~ ps =>
         val paths = p +: ps
         val from  = paths.init
         val to    = paths.last
-
-        Copy(from, to)
+        instance(from, to)
     }
 
-  private def mv: Parser[Expression] =
-    ("mv" ~> path ~ rep1(path)) ^^ {
-      case p ~ ps =>
-        val paths = p +: ps
-        val from  = paths.init
-        val to    = paths.last
+  private val account   = "[\\w-]+".r ^^ Account
+  private val container = "[\\w-]+".r ^^ Container
+  private val prefix    = "[\\w-@/=.]+".r ^^ Prefix
 
-        Move(from, to)
-    }
+  private val path = ((account <~ "@") ~ (container <~ ":/") ~ (prefix ?)) ^^ {
+    case acc ~ cont ~ prefix => Path(acc, cont, prefix)
+  }
 
-  private def rm: Parser[Expression] = ("rm" ~> rep1(path)) ^^ (ps => Remove(ps))
+  private val cp = commandWithFromAndTo("cp", (from, to) => Copy(from, to))
+  private val mv = commandWithFromAndTo("mv", (from, to) => Move(from, to))
 
-  private def count: Parser[Expression] = ("count" ~> rep1(path)) ^^ (ps => Count(ps))
+  private val rm    = commandWithFrom("rm", paths => Remove(paths))
+  private val count = commandWithFrom("count", paths => Count(paths))
+  private val size  = commandWithFrom("size", paths => Size(paths))
 
-  private lazy val expr: PackratParser[Expression] = (cp | mv | rm | count) ~ rep("&&" ~> expr) ^^ {
+  private lazy val expr: PackratParser[Expression] = (cp | mv | rm | count | size) ~ rep("&&" ~> expr) ^^ {
     case e1 ~ es =>
       Semigroup
         .combineAllOption(e1 :: es)

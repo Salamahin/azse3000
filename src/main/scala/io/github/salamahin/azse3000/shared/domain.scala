@@ -12,8 +12,8 @@ final case class Secret(secret: String)  extends AnyVal
 final case class Container(name: String) extends AnyVal
 final case class Prefix(path: String)    extends AnyVal
 
-final case class Path(account: Account, container: Container, prefix: Prefix) {
-  override def toString: String = s"${container.name}@${account.name}:/${prefix.path}"
+final case class Path(account: Account, container: Container, prefix: Option[Prefix]) {
+  override def toString: String = s"${container.name}@${account.name}:/${prefix.map(_.path).getOrElse("")}"
 }
 
 sealed trait Expression

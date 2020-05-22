@@ -1,9 +1,8 @@
 package io.github.salamahin.azse3000
-import org.jline.reader.impl.history.DefaultHistory
-import org.jline.reader.{LineReader, LineReaderBuilder}
-import org.jline.terminal.{Terminal, TerminalBuilder}
+import zio.ZIO
 
-object Main extends App {
+object Main extends zio.App {
+  override def run(args: List[String]): ZIO[zio.ZEnv, Nothing, Int] = {
 
-
+  }
 }

@@ -1,11 +1,13 @@
-package io.github.salamahin.azse3000.expression
-
+package io.github.salamahin.azse3000.interpret
 import cats.kernel.Semigroup
+import cats.~>
 import io.github.salamahin.azse3000.shared._
+import zio.clock.Clock
+import zio.{UIO, URIO}
 
 import scala.util.parsing.combinator.{PackratParsers, RegexParsers}
 
-object CommandParser extends RegexParsers with PackratParsers {
+class CommandParserCompiler extends (CommandParsing ~> URIO[Clock, *]) with RegexParsers with PackratParsers {
   implicit val expSemigroup: Semigroup[Expression] =
     (x: Expression, y: Expression) => And(x, y)
 
@@ -24,7 +26,7 @@ object CommandParser extends RegexParsers with PackratParsers {
   private val prefix    = "[\\w-@/=.]+".r ^^ Prefix
 
   private val path = ((account <~ "@") ~ (container <~ ":/") ~ (prefix ?)) ^^ {
-    case acc ~ cont ~ prefix => Path(acc, cont, prefix)
+    case acc ~ cont ~ prefix => Path(acc, cont, prefix.getOrElse(Prefix("")))
   }
 
   private val cp = commandWithFromAndTo("cp", (from, to) => Copy(from, to))
@@ -41,10 +43,14 @@ object CommandParser extends RegexParsers with PackratParsers {
         .getOrElse(e1)
   }
 
-  def apply(s: Command): Either[MalformedCommand, Expression] = {
-    parseAll(expr, s.cmd) match {
-      case Success(result, _) => Right(result)
-      case NoSuccess(msg, _)  => Left(MalformedCommand(msg))
+  override def apply[A](fa: CommandParsing[A]) =
+    fa match {
+      case ParseCommand(cmd) =>
+        UIO {
+          parseAll(expr, cmd.cmd) match {
+            case Success(result, _) => Right(result)
+            case NoSuccess(msg, _)  => Left(MalformedCommand(msg))
+          }
+        }
     }
-  }
 }

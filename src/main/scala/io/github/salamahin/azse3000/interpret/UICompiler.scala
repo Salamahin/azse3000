@@ -1,13 +1,15 @@
 package io.github.salamahin.azse3000.interpret
+import cats.effect.IO
 import cats.~>
 import io.github.salamahin.azse3000.shared._
 import org.jline.reader.impl.history.DefaultHistory
 import org.jline.reader.{LineReader, LineReaderBuilder}
 import org.jline.terminal.TerminalBuilder
 import org.jline.utils.InfoCmp.Capability
-import zio.{Ref, UIO}
+import zio.clock.Clock
+import zio.{Ref, UIO, URIO}
 
-class UIInterpreter extends (UI ~> UIO) {
+class UICompiler extends (UI ~> IO) {
   private val terminal = TerminalBuilder.builder.build
 
   private val reader = {
@@ -43,15 +45,19 @@ class UIInterpreter extends (UI ~> UIO) {
     terminal.writer().print(lines)
   }
 
-  override def apply[A](fa: UI[A]): UIO[A] =
+  override def apply[A](fa: UI[A]): IO[A] =
     fa match {
-      case PromptCommand()        => UIO { Command(reader.readLine("> ")) }
-      case PromptCreds(acc, cont) => UIO { Secret(reader.readLine(s"SAS for ${acc.name}@${cont.name}: ", '*')) }
-      case ShowProgress(op, progress, complete) =>
-        for {
-          state     <- progressState
-          nextState <- state.update(_ :+ (op, progress, complete))
-          _ = showProgress(nextState)
-        } yield ()
+      case PromptCommand() => IO { Command(reader.readLine("> ")) }
+
+      case PromptCreds(acc, cont) => IO { Secret(reader.readLine(s"SAS for ${acc.name}@${cont.name}: ", '*')) }
+
+      case ShowProgress(op, progress, complete) => ???
+//        for {
+//          state     <- progressState
+//          nextState <- state.update(_ :+ (op, progress, complete))
+//          _ = showProgress(nextState)
+//        } yield ()
+
+      case ShowReports(reports) => ???
     }
 }

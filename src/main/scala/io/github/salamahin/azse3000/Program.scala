@@ -6,9 +6,10 @@ import cats.free.FreeApplicative.FA
 import cats.free.{Free, FreeApplicative}
 import cats.{Functor, Monad, ~>}
 import com.microsoft.azure.storage.blob.CloudBlockBlob
-import io.github.salamahin.azse3000.expression.ActionInterpret
-import io.github.salamahin.azse3000.shared.Azure.COPY_ATTEMPT
+import io.github.salamahin.azse3000.shared.BlobStorageAPI.COPY_ATTEMPT
 import io.github.salamahin.azse3000.shared._
+
+import scala.annotation.tailrec
 
 object ProgramSyntax {
   implicit class LiftSyntax[F[_], A](fa: F[A]) {
@@ -29,6 +30,24 @@ object ProgramSyntax {
   }
 }
 
+trait ActionInterpret[T] {
+  def run(term: Action): T
+}
+
+object ActionInterpret {
+  def interpret[T](int: ActionInterpret[T])(expression: Expression): Vector[T] = {
+    @tailrec
+    def iter(expressions: List[Expression], acc: Vector[T]): Vector[T] =
+      expressions match {
+        case Nil                      => acc
+        case (head: Action) :: tail   => iter(tail, acc :+ int.run(head))
+        case And(left, right) :: tail => iter(left :: right :: tail, acc)
+      }
+
+    iter(expression :: Nil, Vector.empty)
+  }
+}
+
 object Program {
 
   import ProgramSyntax._
@@ -44,8 +63,8 @@ object Program {
     ui: UserInterface[F],
     parser: Parser[F],
     vault: VaultStorage[F],
-    azure: AzureEngine[F],
-    concurrentController: ConcurrentController[F]
+    azure: BlobStorage[F],
+    delays: Delays[F]
   ) = {
     type CREDS         = Map[(Account, Container), Secret]
     type SRC_DST_BLOBS = (CloudBlockBlob, CloudBlockBlob)
@@ -76,7 +95,10 @@ object Program {
       f: CloudBlockBlob => FA[F, T]
     ) = {
       for {
-        initial <- azure.startListing(from, secret).liftFree.toEitherT
+        initial <- azure
+          .startListing(from, secret)
+          .liftFree
+          .toEitherT
 
         blobs <-
           Monad[Free[F, *]]
@@ -87,7 +109,7 @@ object Program {
                   .toVector
                   .traverse(origBlob => //todo should be parallel
                     f(origBlob).map(mappedBlob => (origBlob, mappedBlob))
-                  ) <* ui.showProgress(descr, acc.size, false).liftFA
+                  ) <* ui.showProgress(descr, acc.size, complete = false).liftFA
 
                 azure
                   .continueListing(segment)
@@ -99,7 +121,7 @@ object Program {
 
               case (None, acc) =>
                 ui
-                  .showProgress(descr, acc.size, true)
+                  .showProgress(descr, acc.size, complete = true)
                   .liftFree
                   .map(_ => acc.asRight[(Option[ListingPage], Vector[(CloudBlockBlob, T)])])
             }
@@ -150,7 +172,7 @@ object Program {
                     .asRight[(Vector[SRC_DST_BLOBS], Vector[SRC_DST_BLOBS], Vector[AzureFailure])]
                     .pureMonad[Free[F, *]]: ITER
                 else
-                  concurrentController
+                  delays
                     .delayCopyStatusCheck()
                     .liftFree
                     .map { _ => (pending, newTotalSucceed, newTotalFailures).asLeft }: ITER
@@ -309,6 +331,11 @@ object Program {
         .traverse(identity)
         .toRightEitherT[AzseException]
 
-    } yield summary.flatten).value
+      _ <- ui
+        .showReports(summary.flatten)
+        .liftFree
+        .toRightEitherT[AzseException]
+
+    } yield ()).value
   }
 }

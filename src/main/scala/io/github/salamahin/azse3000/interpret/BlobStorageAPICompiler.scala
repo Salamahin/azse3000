@@ -4,13 +4,14 @@ import cats.~>
 import com.microsoft.azure.storage.ResultSegment
 import com.microsoft.azure.storage.blob.{CloudBlobContainer, CloudBlockBlob, CopyStatus, ListBlobItem}
 import io.github.salamahin.azse3000.shared._
-import zio.{Task, UIO}
+import zio.clock.Clock
+import zio.{Task, UIO, URIO}
 
-class AzureEngineInterpreter(
+class BlobStorageAPICompiler(
   container: (Path, Secret) => CloudBlobContainer,
   blob: (Path, Secret) => CloudBlockBlob,
   maxFetchResults: Int
-) extends (Azure ~> UIO) {
+) extends (BlobStorageAPI ~> URIO[Clock, *]) {
 
   private def listBlobs(cont: CloudBlobContainer, prefix: Prefix, rs: Option[ResultSegment[ListBlobItem]]) =
     cont.listBlobsSegmented(
@@ -36,7 +37,7 @@ class AzureEngineInterpreter(
       else Some(new ListingPageImpl(cont, prefix, listBlobs(cont, prefix, Some(rs))))
   }
 
-  override def apply[A](fa: Azure[A]) =
+  override def apply[A](fa: BlobStorageAPI[A]) =
     fa match {
       case StartListing(inPath, secret) =>
         Task { container(inPath, secret) }
@@ -70,9 +71,10 @@ class AzureEngineInterpreter(
 
       case StartCopy(src, b, dst, dstSecret) =>
         Task {
-          val length   = src.prefix.path.length
-          val relative = b.getUri.getRawPath.substring(length + 1)
-          val newBlob  = blob(dst.copy(prefix = dst.prefix.copy(s"${dst.prefix.path}/$relative")), dstSecret)
+          val blobPath      = b.getUri.getPath.drop(src.prefix.path.length)
+          val newBlobPrefix = if (dst.prefix.path.nonEmpty) s"${dst.prefix.path}/$blobPath" else blobPath
+
+          val newBlob = blob(dst.copy(prefix = Prefix(newBlobPrefix)), dstSecret)
 
           newBlob.startCopy(b)
           newBlob

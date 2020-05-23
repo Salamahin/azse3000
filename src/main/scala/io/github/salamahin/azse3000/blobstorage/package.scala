@@ -20,7 +20,7 @@ package object blobstorage {
 
   final class BlobStorage[F[_]]()(implicit I: InjectK[BlobStorageOps, F]) {
     def startListing(inPath: Path, secret: Secret)                               = I(StartListing(inPath, secret))
-    def continueListing(tkn: ListingPage)                                        = I(ContinueListing(tkn))
+    def continueListing(tkn: ListingPage)                                         = I(ContinueListing(tkn))
     def isCopied(blob: CloudBlockBlob)                                           = I(IsCopied(blob))
     def removeBlob(blob: CloudBlockBlob)                                         = I(RemoveBlob(blob))
     def sizeOfBlobBytes(blob: CloudBlockBlob)                                    = I(SizeOfBlobBytes(blob))

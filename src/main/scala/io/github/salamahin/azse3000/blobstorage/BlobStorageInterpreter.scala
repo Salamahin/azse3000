@@ -1,4 +1,4 @@
-package io.github.salamahin.azse3000.interpret
+package io.github.salamahin.azse3000.blobstorage
 
 import cats.~>
 import com.microsoft.azure.storage.ResultSegment
@@ -7,11 +7,11 @@ import io.github.salamahin.azse3000.shared._
 import zio.clock.Clock
 import zio.{Task, UIO, URIO}
 
-class BlobStorageAPICompiler(
+class BlobStorageInterpreter(
   container: (Path, Secret) => CloudBlobContainer,
   blob: (Path, Secret) => CloudBlockBlob,
   maxFetchResults: Int
-) extends (BlobStorageAPI ~> URIO[Clock, *]) {
+) extends (BlobStorageOps ~> URIO[Clock, *]) {
 
   private def listBlobs(cont: CloudBlobContainer, prefix: Prefix, rs: Option[ResultSegment[ListBlobItem]]) =
     cont.listBlobsSegmented(
@@ -37,7 +37,7 @@ class BlobStorageAPICompiler(
       else Some(new ListingPageImpl(cont, prefix, listBlobs(cont, prefix, Some(rs))))
   }
 
-  override def apply[A](fa: BlobStorageAPI[A]) =
+  override def apply[A](fa: BlobStorageOps[A]) =
     fa match {
       case StartListing(inPath, secret) =>
         Task { container(inPath, secret) }

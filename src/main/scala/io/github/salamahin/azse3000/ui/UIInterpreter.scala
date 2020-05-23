@@ -1,5 +1,5 @@
-package io.github.salamahin.azse3000.interpret
-import cats.effect.IO
+package io.github.salamahin.azse3000.ui
+
 import cats.~>
 import io.github.salamahin.azse3000.shared._
 import org.jline.reader.impl.history.DefaultHistory
@@ -9,7 +9,7 @@ import org.jline.utils.InfoCmp.Capability
 import zio.clock.Clock
 import zio.{Ref, UIO, URIO}
 
-class UICompiler extends (UI ~> IO) {
+class UIInterpreter extends (UIOps ~> URIO[Clock, *]) {
   private val terminal = TerminalBuilder.builder.build
 
   private val reader = {
@@ -45,11 +45,11 @@ class UICompiler extends (UI ~> IO) {
     terminal.writer().print(lines)
   }
 
-  override def apply[A](fa: UI[A]): IO[A] =
+  override def apply[A](fa: UIOps[A]): URIO[Clock, A] =
     fa match {
-      case PromptCommand() => IO { Command(reader.readLine("> ")) }
+      case PromptCommand() => UIO { Command(reader.readLine("> ")) }
 
-      case PromptCreds(acc, cont) => IO { Secret(reader.readLine(s"SAS for ${acc.name}@${cont.name}: ", '*')) }
+      case PromptCreds(acc, cont) => UIO { Secret(reader.readLine(s"SAS for ${acc.name}@${cont.name}: ", '*')) }
 
       case ShowProgress(op, progress, complete) => ???
 //        for {

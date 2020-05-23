@@ -1,13 +1,17 @@
 package io.github.salamahin.azse3000
 
-import cats.data.{EitherT, OptionT}
+import cats.data.{EitherK, EitherT, OptionT}
 import cats.free.Free._
 import cats.free.FreeApplicative.FA
 import cats.free.{Free, FreeApplicative}
 import cats.{Functor, Monad, ~>}
 import com.microsoft.azure.storage.blob.CloudBlockBlob
-import io.github.salamahin.azse3000.shared.BlobStorageAPI.COPY_ATTEMPT
+import io.github.salamahin.azse3000.blobstorage._
+import io.github.salamahin.azse3000.delay.{DelayOps, Delays}
+import io.github.salamahin.azse3000.parsing.{Parser, ParsingOps}
 import io.github.salamahin.azse3000.shared._
+import io.github.salamahin.azse3000.ui.{UIOps, UserInterface}
+import io.github.salamahin.azse3000.vault.{Vault, VaultOps}
 
 import scala.annotation.tailrec
 
@@ -51,24 +55,19 @@ object ActionInterpret {
 object Program {
 
   import ProgramSyntax._
-  import cats.instances.either._
   import cats.instances.vector._
-  import cats.syntax.alternative._
+  import cats.instances.either._
   import cats.syntax.apply._
-  import cats.syntax.bifunctor._
   import cats.syntax.either._
   import cats.syntax.traverse._
+  import cats.syntax.alternative._
+  import cats.syntax.bifunctor._
 
-  def program[F[_]: Monad](implicit
-    ui: UserInterface[F],
-    parser: Parser[F],
-    vault: VaultStorage[F],
-    azure: BlobStorage[F],
-    delays: Delays[F]
-  ) = {
-    type CREDS         = Map[(Account, Container), Secret]
-    type SRC_DST_BLOBS = (CloudBlockBlob, CloudBlockBlob)
+  type App[A]        = EitherK[UIOps, EitherK[DelayOps, EitherK[BlobStorageOps, EitherK[ParsingOps, VaultOps, *], *], *], A]
+  type CREDS         = Map[(Account, Container), Secret]
+  type SRC_DST_BLOBS = (CloudBlockBlob, CloudBlockBlob)
 
+  def apply(implicit ui: UserInterface[App], delays: Delays[App], parser: Parser[App], blobStorage: BlobStorage[App], vault: Vault[App]) = {
     val collectPaths =
       ActionInterpret.interpret[Seq[Path]] {
         case Copy(from, to) => from :+ to
@@ -92,16 +91,16 @@ object Program {
         .map(_.toMap)
 
     def listAndProcessBlobs[T](from: Path, secret: Secret, descr: Description)(
-      f: CloudBlockBlob => FA[F, T]
+      f: CloudBlockBlob => FA[App, T]
     ) = {
       for {
-        initial <- azure
+        initial <- blobStorage
           .startListing(from, secret)
           .liftFree
           .toEitherT
 
         blobs <-
-          Monad[Free[F, *]]
+          Monad[Free[App, *]]
             .tailRecM(Some(initial): Option[ListingPage], Vector.empty[(CloudBlockBlob, T)]) {
               case (Some(segment), acc) =>
                 val mappedBlobsOfThatSegment = segment
@@ -111,7 +110,7 @@ object Program {
                     f(origBlob).map(mappedBlob => (origBlob, mappedBlob))
                   ) <* ui.showProgress(descr, acc.size, complete = false).liftFA
 
-                azure
+                blobStorage
                   .continueListing(segment)
                   .liftFA
                   .map2(mappedBlobsOfThatSegment) { (newSegment, mappedBlobs) => //todo should be parallel
@@ -131,13 +130,13 @@ object Program {
     }
 
     def waitUntilCopied(blobs: Vector[SRC_DST_BLOBS]) =
-      Monad[Free[F, *]]
+      Monad[Free[App, *]]
         .tailRecM(blobs, Vector.empty[SRC_DST_BLOBS], Vector.empty[AzureFailure]) {
           case (toCheck, totalSucceed, totalFailures) =>
             toCheck
               .traverse {
                 case (srcBlob, dstBlob) => //todo parallel here?
-                  azure
+                  blobStorage
                     .isCopied(dstBlob)
                     .liftFA
                     .map { checkAttempt =>
@@ -162,7 +161,7 @@ object Program {
                 val newTotalSucceed  = totalSucceed ++ succeed
                 val newTotalFailures = totalFailures ++ failed
 
-                type ITER = Free[F, Either[
+                type ITER = Free[App, Either[
                   (Vector[SRC_DST_BLOBS], Vector[SRC_DST_BLOBS], Vector[AzureFailure]),
                   (Vector[SRC_DST_BLOBS], Vector[AzureFailure])
                 ]]
@@ -170,7 +169,7 @@ object Program {
                 if (pending.isEmpty)
                   (newTotalSucceed, newTotalFailures)
                     .asRight[(Vector[SRC_DST_BLOBS], Vector[SRC_DST_BLOBS], Vector[AzureFailure])]
-                    .pureMonad[Free[F, *]]: ITER
+                    .pureMonad[Free[App, *]]: ITER
                 else
                   delays
                     .delayCopyStatusCheck()
@@ -183,7 +182,7 @@ object Program {
       val listAndCopyAttempt = for {
 
         copyAttempts <- listAndProcessBlobs[COPY_ATTEMPT](from, creds(from.account, from.container), descr) {
-          azure
+          blobStorage
             .startCopy(from, _, to, creds(to.account, to.container))
             .liftFA
         }
@@ -208,7 +207,7 @@ object Program {
     def removeListedBlobs(blobs: Vector[CloudBlockBlob]) =
       blobs
         .traverse { b => //todo parallel here?
-          azure.removeBlob(b).liftFA
+          blobStorage.removeBlob(b).liftFA
         }
         .map { attempts =>
           val (failed, succeed) = attempts.separate
@@ -226,7 +225,7 @@ object Program {
             (copiedSourceBlobs, _) = successfulCopyAttempts.unzip
             (sucessfulyRemoved, removeFailures) <- removeListedBlobs(copiedSourceBlobs).monad
 
-            report = InterpretationReport(descr, MoveSummary(sucessfulyRemoved), copyFailures ++ removeFailures)
+            report = shared.InterpretationReport(descr, MoveSummary(sucessfulyRemoved), copyFailures ++ removeFailures)
           } yield report).liftFA
         }
         .fold
@@ -237,12 +236,12 @@ object Program {
         .traverse { f => //todo parallel here?
           val descr = Description(s"Remove from $f")
 
-          listAndProcessBlobs(f, creds(f.account, f.container), descr) { blob => azure.removeBlob(blob).liftFA }
+          listAndProcessBlobs(f, creds(f.account, f.container), descr) { blob => blobStorage.removeBlob(blob).liftFA }
             .map { removings =>
               val (_, attempts)               = removings.unzip
               val (removingFailures, succeed) = attempts.separate
 
-              InterpretationReport(descr, RemoveSummary(succeed.size), removingFailures)
+              shared.InterpretationReport(descr, RemoveSummary(succeed.size), removingFailures)
             }
             .fold(
               failure => InterpretationReport(descr, RemoveSummary(0), Vector(failure)),
@@ -260,7 +259,7 @@ object Program {
 
           listAndCopyBlobs(f, to, creds, descr)
             .map {
-              case (succeed, failures) => InterpretationReport(descr, CopySummary(succeed.size), failures)
+              case (succeed, failures) => shared.InterpretationReport(descr, CopySummary(succeed.size), failures)
             }
             .liftFA
         }
@@ -286,7 +285,7 @@ object Program {
         .traverse { f => //todo parallel here?
           val descr = Description(s"Size of blobs in $f")
 
-          listAndProcessBlobs(f, creds(f.account, f.container), descr) { blob => azure.sizeOfBlobBytes(blob).liftFA }
+          listAndProcessBlobs(f, creds(f.account, f.container), descr) { blob => blobStorage.sizeOfBlobBytes(blob).liftFA }
             .map { fetchedSizes =>
               val (_, sizes) = fetchedSizes.unzip
               InterpretationReport(descr, SizeSummary(sizes.sum), Vector.empty)
@@ -302,7 +301,7 @@ object Program {
 
     def runActions(creds: CREDS) =
       ActionInterpret
-        .interpret[Free[F, Vector[InterpretationReport]]] {
+        .interpret[Free[App, Vector[InterpretationReport]]] {
           case Copy(from, to) => copyAllBlobs(from, to, creds)
           case Move(from, to) => moveAllBlobs(from, to, creds)
           case Remove(from)   => removeAllBlobs(from, creds)
@@ -324,7 +323,7 @@ object Program {
       paths = collectPaths(expr).flatten
 
       secrets <- collectCreds(paths)
-        .foldMap(λ[F ~> Free[F, *]](_.liftFree))
+        .foldMap(λ[App ~> Free[App, *]](_.liftFree))
         .toRightEitherT[AzseException]
 
       summary <- runActions(secrets)(expr)

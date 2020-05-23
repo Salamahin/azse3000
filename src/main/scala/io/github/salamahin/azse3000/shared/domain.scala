@@ -1,7 +1,5 @@
 package io.github.salamahin.azse3000.shared
 
-import com.microsoft.azure.storage.blob.CloudBlockBlob
-
 sealed trait AzseException
 final case class MalformedCommand(msg: String)               extends Exception(msg) with AzseException
 final case class AzureFailure(msg: String, cause: Throwable) extends Exception(msg, cause) with AzseException
@@ -31,10 +29,6 @@ final case class MoveSummary(succeed: Long)   extends Summary
 final case class RemoveSummary(succeed: Long) extends Summary
 final case class CountSummary(count: Long)    extends Summary
 final case class SizeSummary(bytes: Long)     extends Summary
+
 final case class Description(description: String)
 final case class InterpretationReport(description: Description, summary: Summary, errors: Vector[AzureFailure])
-
-trait ListingPage {
-  def blobs: Seq[CloudBlockBlob]
-  def next: Option[ListingPage]
-}

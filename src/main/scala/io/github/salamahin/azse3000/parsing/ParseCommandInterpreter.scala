@@ -1,4 +1,5 @@
-package io.github.salamahin.azse3000.interpret
+package io.github.salamahin.azse3000.parsing
+
 import cats.kernel.Semigroup
 import cats.~>
 import io.github.salamahin.azse3000.shared._
@@ -7,7 +8,7 @@ import zio.{UIO, URIO}
 
 import scala.util.parsing.combinator.{PackratParsers, RegexParsers}
 
-class CommandParserCompiler extends (CommandParsing ~> URIO[Clock, *]) with RegexParsers with PackratParsers {
+class ParseCommandInterpreter extends (ParsingOps ~> URIO[Clock, *]) with RegexParsers with PackratParsers {
   implicit val expSemigroup: Semigroup[Expression] =
     (x: Expression, y: Expression) => And(x, y)
 
@@ -43,7 +44,7 @@ class CommandParserCompiler extends (CommandParsing ~> URIO[Clock, *]) with Rege
         .getOrElse(e1)
   }
 
-  override def apply[A](fa: CommandParsing[A]) =
+  override def apply[A](fa: ParsingOps[A]) =
     fa match {
       case ParseCommand(cmd) =>
         UIO {

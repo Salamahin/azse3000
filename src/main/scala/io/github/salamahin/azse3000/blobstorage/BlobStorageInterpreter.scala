@@ -8,14 +8,14 @@ import zio.clock.Clock
 import zio.{Task, UIO, URIO}
 
 class BlobStorageInterpreter(
-  container: (Path, Secret) => CloudBlobContainer,
-  blob: (Path, Secret) => CloudBlockBlob,
+  container: Path => CloudBlobContainer,
+  blob: Path => CloudBlockBlob,
   maxFetchResults: Int
 ) extends (BlobStorageOps ~> URIO[Clock, *]) {
 
   private def listBlobs(cont: CloudBlobContainer, prefix: Prefix, rs: Option[ResultSegment[ListBlobItem]]) =
     cont.listBlobsSegmented(
-      prefix.path,
+      prefix.value,
       true,
       null,
       maxFetchResults,
@@ -39,8 +39,8 @@ class BlobStorageInterpreter(
 
   override def apply[A](fa: BlobStorageOps[A]) =
     fa match {
-      case StartListing(inPath, secret) =>
-        Task { container(inPath, secret) }
+      case StartListing(inPath) =>
+        Task { container(inPath) }
           .map(c => new ListingPageImpl(c, inPath.prefix, listBlobs(c, inPath.prefix, None)): ListingPage)
           .mapError(th => AzureFailure(s"Failed to list blobs in $inPath", th))
           .either
@@ -69,12 +69,12 @@ class BlobStorageInterpreter(
 
       case SizeOfBlobBytes(blob) => UIO { blob.downloadAttributes(); blob.getProperties.getLength }
 
-      case StartCopy(src, b, dst, dstSecret) =>
+      case StartCopy(src, b, dst) =>
         Task {
-          val blobPath      = b.getUri.getPath.drop(src.prefix.path.length)
-          val newBlobPrefix = if (dst.prefix.path.nonEmpty) s"${dst.prefix.path}/$blobPath" else blobPath
+          val blobPath      = b.getUri.getPath.drop(src.prefix.value.length)
+          val newBlobPrefix = if (dst.prefix.value.nonEmpty) s"${dst.prefix.value}/$blobPath" else blobPath
 
-          val newBlob = blob(dst.copy(prefix = Prefix(newBlobPrefix)), dstSecret)
+          val newBlob = blob(dst.copy(prefix = Prefix(newBlobPrefix)))
 
           newBlob.startCopy(b)
           newBlob

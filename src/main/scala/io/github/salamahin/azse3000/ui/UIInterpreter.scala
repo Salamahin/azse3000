@@ -49,8 +49,6 @@ class UIInterpreter extends (UIOps ~> URIO[Clock, *]) {
     fa match {
       case PromptCommand() => UIO { Command(reader.readLine("> ")) }
 
-      case PromptCreds(acc, cont) => UIO { Secret(reader.readLine(s"SAS for ${acc.name}@${cont.name}: ", '*')) }
-
       case ShowProgress(op, progress, complete) => ???
 //        for {
 //          state     <- progressState

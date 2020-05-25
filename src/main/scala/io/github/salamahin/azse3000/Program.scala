@@ -1,17 +1,16 @@
 package io.github.salamahin.azse3000
 
-import cats.data.{EitherK, EitherT, OptionT}
+import cats.data.{EitherK, EitherT}
 import cats.free.Free._
 import cats.free.FreeApplicative.FA
 import cats.free.{Free, FreeApplicative}
-import cats.{Functor, Monad, ~>}
+import cats.{Functor, Monad}
 import com.microsoft.azure.storage.blob.CloudBlockBlob
 import io.github.salamahin.azse3000.blobstorage._
 import io.github.salamahin.azse3000.delay.{DelayOps, Delays}
 import io.github.salamahin.azse3000.parsing.{Parser, ParsingOps}
 import io.github.salamahin.azse3000.shared._
 import io.github.salamahin.azse3000.ui.{UIOps, UserInterface}
-import io.github.salamahin.azse3000.vault.{Vault, VaultOps}
 
 import scala.annotation.tailrec
 
@@ -55,47 +54,24 @@ object ActionInterpret {
 object Program {
 
   import ProgramSyntax._
-  import cats.instances.vector._
   import cats.instances.either._
+  import cats.instances.vector._
+  import cats.syntax.alternative._
   import cats.syntax.apply._
+  import cats.syntax.bifunctor._
   import cats.syntax.either._
   import cats.syntax.traverse._
-  import cats.syntax.alternative._
-  import cats.syntax.bifunctor._
 
-  type App[A]        = EitherK[UIOps, EitherK[DelayOps, EitherK[BlobStorageOps, EitherK[ParsingOps, VaultOps, *], *], *], A]
-  type CREDS         = Map[(Account, Container), Secret]
+  type App[A]        = EitherK[UIOps, EitherK[DelayOps, EitherK[BlobStorageOps, ParsingOps, *], *], A]
   type SRC_DST_BLOBS = (CloudBlockBlob, CloudBlockBlob)
 
-  def apply(implicit ui: UserInterface[App], delays: Delays[App], parser: Parser[App], blobStorage: BlobStorage[App], vault: Vault[App]) = {
-    val collectPaths =
-      ActionInterpret.interpret[Seq[Path]] {
-        case Copy(from, to) => from :+ to
-        case Move(from, to) => from :+ to
-        case Remove(from)   => from
-        case Count(in)      => in
-        case Size(in)       => in
-      } _
-
-    def collectCreds(paths: Seq[Path]) =
-      paths
-        .groupBy(p => (p.account, p.container))
-        .keys
-        .toVector
-        .traverse {
-          case id @ (acc, cont) =>
-            OptionT(vault.readCreds(acc, cont).liftFree)
-              .getOrElseF(ui.promptCreds(acc, cont).liftFree)
-              .map(secret => id -> secret)
-        }
-        .map(_.toMap)
-
-    def listAndProcessBlobs[T](from: Path, secret: Secret, descr: Description)(
+  def apply(implicit ui: UserInterface[App], delays: Delays[App], parser: Parser[App], blobStorage: BlobStorage[App]) = {
+    def listAndProcessBlobs[T](from: Path, descr: Description)(
       f: CloudBlockBlob => FA[App, T]
     ) = {
       for {
         initial <- blobStorage
-          .startListing(from, secret)
+          .startListing(from)
           .liftFree
           .toEitherT
 
@@ -178,12 +154,12 @@ object Program {
               }
         }
 
-    def listAndCopyBlobs(from: Path, to: Path, creds: CREDS, descr: Description) = {
+    def listAndCopyBlobs(from: Path, to: Path, descr: Description) = {
       val listAndCopyAttempt = for {
 
-        copyAttempts <- listAndProcessBlobs[COPY_ATTEMPT](from, creds(from.account, from.container), descr) {
+        copyAttempts <- listAndProcessBlobs(from, descr) {
           blobStorage
-            .startCopy(from, _, to, creds(to.account, to.container))
+            .startCopy(from, _, to)
             .liftFA
         }
 
@@ -214,14 +190,14 @@ object Program {
           (succeed.size, failed)
         }
 
-    def moveAllBlobs(from: Seq[Path], to: Path, creds: CREDS) =
+    def moveAllBlobs(from: Seq[Path], to: Path) =
       from
         .toVector
         .traverse { f => //todo parallel here?
           val descr = Description(s"Move from $f to $to")
 
           (for {
-            (successfulCopyAttempts, copyFailures) <- listAndCopyBlobs(f, to, creds, descr)
+            (successfulCopyAttempts, copyFailures) <- listAndCopyBlobs(f, to, descr)
             (copiedSourceBlobs, _) = successfulCopyAttempts.unzip
             (sucessfulyRemoved, removeFailures) <- removeListedBlobs(copiedSourceBlobs).monad
 
@@ -230,13 +206,13 @@ object Program {
         }
         .fold
 
-    def removeAllBlobs(from: Seq[Path], creds: CREDS) =
+    def removeAllBlobs(from: Seq[Path]) =
       from
         .toVector
         .traverse { f => //todo parallel here?
           val descr = Description(s"Remove from $f")
 
-          listAndProcessBlobs(f, creds(f.account, f.container), descr) { blob => blobStorage.removeBlob(blob).liftFA }
+          listAndProcessBlobs(f, descr) { blob => blobStorage.removeBlob(blob).liftFA }
             .map { removings =>
               val (_, attempts)               = removings.unzip
               val (removingFailures, succeed) = attempts.separate
@@ -251,13 +227,13 @@ object Program {
         }
         .fold
 
-    def copyAllBlobs(from: Seq[Path], to: Path, creds: CREDS) =
+    def copyAllBlobs(from: Seq[Path], to: Path) =
       from
         .toVector
         .traverse { f => //todo parallel here?
           val descr = Description(s"Copy from $f to $to")
 
-          listAndCopyBlobs(f, to, creds, descr)
+          listAndCopyBlobs(f, to, descr)
             .map {
               case (succeed, failures) => shared.InterpretationReport(descr, CopySummary(succeed.size), failures)
             }
@@ -265,12 +241,12 @@ object Program {
         }
         .fold
 
-    def countAllBlobs(in: Seq[Path], creds: CREDS) =
+    def countAllBlobs(in: Seq[Path]) =
       in.toVector
         .traverse { f => //todo parallel here?
           val descr = Description(s"Count in $f")
 
-          listAndProcessBlobs(f, creds(f.account, f.container), descr) { _ => FreeApplicative.pure(1) }
+          listAndProcessBlobs(f, descr) { _ => FreeApplicative.pure(1) }
             .map(listed => InterpretationReport(descr, CountSummary(listed.size), Vector.empty))
             .fold(
               failure => InterpretationReport(descr, CountSummary(0), Vector(failure)),
@@ -280,12 +256,12 @@ object Program {
         }
         .fold
 
-    def sizeOfAllBlobs(in: Seq[Path], creds: CREDS) = {
+    def sizeOfAllBlobs(in: Seq[Path]) = {
       in.toVector
         .traverse { f => //todo parallel here?
           val descr = Description(s"Size of blobs in $f")
 
-          listAndProcessBlobs(f, creds(f.account, f.container), descr) { blob => blobStorage.sizeOfBlobBytes(blob).liftFA }
+          listAndProcessBlobs(f, descr) { blob => blobStorage.sizeOfBlobBytes(blob).liftFA }
             .map { fetchedSizes =>
               val (_, sizes) = fetchedSizes.unzip
               InterpretationReport(descr, SizeSummary(sizes.sum), Vector.empty)
@@ -299,14 +275,14 @@ object Program {
         .fold
     }
 
-    def runActions(creds: CREDS) =
+    val runActions =
       ActionInterpret
         .interpret[Free[App, Vector[InterpretationReport]]] {
-          case Copy(from, to) => copyAllBlobs(from, to, creds)
-          case Move(from, to) => moveAllBlobs(from, to, creds)
-          case Remove(from)   => removeAllBlobs(from, creds)
-          case Count(in)      => countAllBlobs(in, creds)
-          case Size(in)       => sizeOfAllBlobs(in, creds)
+          case Copy(from, to) => copyAllBlobs(from, to)
+          case Move(from, to) => moveAllBlobs(from, to)
+          case Remove(from)   => removeAllBlobs(from)
+          case Count(in)      => countAllBlobs(in)
+          case Size(in)       => sizeOfAllBlobs(in)
         } _
 
     (for {
@@ -320,13 +296,7 @@ object Program {
         .toEitherT
         .leftWiden[AzseException]
 
-      paths = collectPaths(expr).flatten
-
-      secrets <- collectCreds(paths)
-        .foldMap(λ[App ~> Free[App, *]](_.liftFree))
-        .toRightEitherT[AzseException]
-
-      summary <- runActions(secrets)(expr)
+      summary <- runActions(expr)
         .traverse(identity)
         .toRightEitherT[AzseException]
 

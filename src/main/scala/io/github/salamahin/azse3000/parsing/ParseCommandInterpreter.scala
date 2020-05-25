@@ -27,7 +27,7 @@ class ParseCommandInterpreter extends (ParsingOps ~> URIO[Clock, *]) with RegexP
   private val prefix    = "[\\w-@/=.]+".r ^^ Prefix
 
   private val path = ((account <~ "@") ~ (container <~ ":/") ~ (prefix ?)) ^^ {
-    case acc ~ cont ~ prefix => Path(acc, cont, prefix.getOrElse(Prefix("")))
+    case acc ~ cont ~ prefix => Path(acc, cont, prefix.getOrElse(Prefix("")), ???)
   }
 
   private val cp = commandWithFromAndTo("cp", (from, to) => Copy(from, to))

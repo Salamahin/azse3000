@@ -4,14 +4,17 @@ sealed trait AzseException
 final case class MalformedCommand(msg: String)               extends Exception(msg) with AzseException
 final case class AzureFailure(msg: String, cause: Throwable) extends Exception(msg, cause) with AzseException
 
-final case class Command(cmd: String)    extends AnyVal
-final case class Account(name: String)   extends AnyVal
-final case class Secret(secret: String)  extends AnyVal
-final case class Container(name: String) extends AnyVal
-final case class Prefix(path: String)    extends AnyVal
+final case class Command(cmd: String)      extends AnyVal
+final case class Account(name: String)     extends AnyVal
+final case class Container(name: String)   extends AnyVal
+final case class Prefix(value: String)     extends AnyVal
+final case class Environment(name: String) extends AnyVal
+final case class Secret(secret: String) extends AnyVal {
+  override def toString: String = "***"
+}
 
-final case class Path(account: Account, container: Container, prefix: Prefix) {
-  override def toString: String = s"${container.name}@${account.name}:/${prefix.path}"
+final case class Path(account: Account, container: Container, prefix: Prefix, sas: Secret) {
+  override def toString: String = s"${container.name}@${account.name}:/${prefix.value}"
 }
 
 sealed trait Expression
@@ -32,3 +35,6 @@ final case class SizeSummary(bytes: Long)     extends Summary
 
 final case class Description(description: String)
 final case class InterpretationReport(description: Description, summary: Summary, errors: Vector[AzureFailure])
+
+final case class EnvironmentConfig(account: Account, creds: Map[Container, Secret])
+final case class Config(value: Map[Environment, EnvironmentConfig]) extends AnyVal

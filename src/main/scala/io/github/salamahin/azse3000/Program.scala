@@ -69,10 +69,11 @@ object Program {
     def listAndProcessBlobs[T](from: Path, descr: Description)(
       f: CloudBlockBlob => FA[App, T]
     ) = {
+      import cats.implicits._
       for {
-        initial <- blobStorage
+        initial <- (blobStorage
           .startListing(from)
-          .liftFree
+          .liftFree <* ui.showProgress(descr, 0, complete = false).liftFree)
           .toEitherT
 
         blobs <-

@@ -12,41 +12,60 @@ import pureconfig.{ConfigReader, ConfigSource}
 import zio.ZIO
 
 object Main extends zio.App {
-  override def run(args: List[String]): ZIO[zio.ZEnv, Nothing, Int] = {
-    def mapReader[K, V](f: String => K)(implicit r: ConfigReader[Map[String, V]]) =
-      r
-        .map {
-          _.map {
-            case (x, y) => f(x) -> y
-          }
+  private def mapReader[K, V](f: String => K)(implicit r: ConfigReader[Map[String, V]]) =
+    r
+      .map {
+        _.map {
+          case (x, y) => f(x) -> y
         }
+      }
 
+  private def toBlob(path: Path) =
+    new CloudBlockBlob(
+      URI.create(s"https://${path.account.storage}.blob.core.windows.net/${path.container.name}/${path.prefix.value}"),
+      new StorageCredentialsSharedAccessSignature(path.sas.secret)
+    )
+
+  private def toContainer(path: Path) =
+    new CloudBlobContainer(
+      URI.create(s"https://${path.account.storage.account}.blob.core.windows.net/${path.container.name}"),
+      new StorageCredentialsSharedAccessSignature(path.sas.secret)
+    )
+
+  override def run(args: List[String]): ZIO[zio.ZEnv, Nothing, Int] = {
     import pureconfig.generic.auto._
     implicit val environmentReader       = mapReader[Container, Secret](Container)
-    implicit val environmentConfigReader = mapReader[Environment, EnvironmentConfig](Environment)
+    implicit val environmentConfigReader = mapReader[EnvironmentAlias, EnvironmentConfig](EnvironmentAlias)
 
     val conf = ConfigSource
       .file("secrets.conf")
       .loadOrThrow[Config]
 
-    def toBlob(path: Path) =
-      new CloudBlockBlob(
-        URI.create(s"https://${path.account.name}.blob.core.windows.net/${path.container.name}/${path.prefix.value}"),
-        new StorageCredentialsSharedAccessSignature(path.sas.secret)
-      )
-
-    def toContainer(path: Path) =
-      new CloudBlobContainer(
-        URI.create(s"https://${path.account.name}.blob.core.windows.net/${path.container.name}"),
-        new StorageCredentialsSharedAccessSignature(path.sas.secret)
-      )
-
-    val interpreter = new UIInterpreter or
-      (new DelayInterpreter or
-        (new BlobStorageInterpreter(toContainer, toBlob, 5000) or
-          new ParseCommandInterpreter))
+    val interpreter =
+      new UIInterpreter or
+        (new DelayInterpreter or
+          (new BlobStorageInterpreter(toContainer, toBlob, 5000) or
+            new ParseCommandInterpreter(conf)))
 
     import zio.interop.catz._
+
+    println(
+      """
+        |
+        | ▄▄▄      ▒███████▒  ██████ ▓█████ 
+        |▒████▄    ▒ ▒ ▒ ▄▀░▒██    ▒ ▓█   ▀ 
+        |▒██  ▀█▄  ░ ▒ ▄▀▒░ ░ ▓██▄   ▒███   
+        |░██▄▄▄▄██   ▄▀▒   ░  ▒   ██▒▒▓█  ▄ 
+        | ▓█   ▓██▒▒███████▒▒██████▒▒░▒████▒
+        | ▒▒   ▓▒█░░▒▒ ▓░▒░▒▒ ▒▓▒ ▒ ░░░ ▒░ ░
+        |  ▒   ▒▒ ░░░▒ ▒ ░ ▒░ ░▒  ░ ░ ░ ░  ░
+        |  ░   ▒   ░ ░ ░ ░ ░░  ░  ░     ░   
+        |      ░  ░  ░ ░          ░     ░  ░
+        |          ░                        
+        |
+        |""".stripMargin
+    )
+
     Program.apply
       .foldMap(interpreter)
       .map(_ => 0)

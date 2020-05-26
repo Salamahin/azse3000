@@ -8,7 +8,7 @@ import zio.{UIO, URIO}
 
 import scala.util.parsing.combinator.{PackratParsers, RegexParsers}
 
-class ParseCommandInterpreter extends (ParsingOps ~> URIO[Clock, *]) with RegexParsers with PackratParsers {
+class ParseCommandInterpreter(conf: Config) extends (ParsingOps ~> URIO[Clock, *]) with RegexParsers with PackratParsers {
   implicit val expSemigroup: Semigroup[Expression] =
     (x: Expression, y: Expression) => And(x, y)
 
@@ -22,12 +22,21 @@ class ParseCommandInterpreter extends (ParsingOps ~> URIO[Clock, *]) with RegexP
         instance(from, to)
     }
 
-  private val account   = "[\\w-]+".r ^^ Account
+  private val envAlias  = "[\\w-]+".r ^^ EnvironmentAlias
   private val container = "[\\w-]+".r ^^ Container
   private val prefix    = "[\\w-@/=.]+".r ^^ Prefix
 
-  private val path = ((account <~ "@") ~ (container <~ ":/") ~ (prefix ?)) ^^ {
-    case acc ~ cont ~ prefix => Path(acc, cont, prefix.getOrElse(Prefix("")), ???)
+  private val path = ((container <~ "@") ~ (envAlias <~ ":/") ~ (prefix ?)) ^^ {
+    case cont ~ env ~ prefix =>
+      val envConfig = conf
+        .value
+        .getOrElse(env, throw new IllegalArgumentException(s"No configuration found for ${env.value}"))
+
+      val sas = envConfig
+        .creds
+        .getOrElse(cont, throw new IllegalArgumentException(s"No SAS for ${cont.name}@${env.value} provided"))
+
+      Path(AccountInfo(envConfig.account, env), cont, prefix.getOrElse(Prefix("")), sas)
   }
 
   private val cp = commandWithFromAndTo("cp", (from, to) => Copy(from, to))
@@ -48,7 +57,7 @@ class ParseCommandInterpreter extends (ParsingOps ~> URIO[Clock, *]) with RegexP
     fa match {
       case ParseCommand(cmd) =>
         UIO {
-          parseAll(expr, cmd.cmd) match {
+          parseAll(expr, cmd.value) match {
             case Success(result, _) => Right(result)
             case NoSuccess(msg, _)  => Left(MalformedCommand(msg))
           }

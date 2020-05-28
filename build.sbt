@@ -17,6 +17,8 @@ libraryDependencies ++= Seq(
   "org.typelevel"          %% "cats-effect"              % "2.1.0",
   "dev.zio"                %% "zio"                      % "1.0.0-RC17",
   "dev.zio"                %% "zio-interop-cats"         % "2.0.0.0-RC10",
+  "dev.zio"                %% "zio-interop-scalaz7x"       % "7.2.27.0-RC9",
+  "org.scalaz"             %% "scalaz-core"              % "7.2.27",
   "com.github.pureconfig"  %% "pureconfig"               % "0.12.3",
   "com.microsoft.azure"     % "azure-storage"            % "8.6.0",
   "org.jline"               % "jline"                    % "3.14.1",

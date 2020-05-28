@@ -1,6 +1,8 @@
 package io.github.salamahin.azse3000
 import java.net.URI
 
+import cats.free.FreeApplicative.FA
+import cats.{Applicative, ~>}
 import com.microsoft.azure.storage.StorageCredentialsSharedAccessSignature
 import com.microsoft.azure.storage.blob.{CloudBlobContainer, CloudBlockBlob}
 import io.github.salamahin.azse3000.blobstorage.BlobStorageInterpreter
@@ -9,7 +11,8 @@ import io.github.salamahin.azse3000.parsing.ParseCommandInterpreter
 import io.github.salamahin.azse3000.shared._
 import io.github.salamahin.azse3000.ui.UIInterpreter
 import pureconfig.{ConfigReader, ConfigSource}
-import zio.ZIO
+import zio.clock.Clock
+import zio.{URIO, ZIO}
 
 object Main extends zio.App {
   private def mapReader[K, V](f: String => K)(implicit r: ConfigReader[Map[String, V]]) =
@@ -44,7 +47,7 @@ object Main extends zio.App {
     val interpreter =
       new UIInterpreter or
         (new DelayInterpreter or
-          (new BlobStorageInterpreter(toContainer, toBlob, 5000) or
+          (new BlobStorageInterpreter(toContainer, toBlob, 2) or
             new ParseCommandInterpreter(conf)))
 
     import zio.interop.catz._
@@ -66,8 +69,17 @@ object Main extends zio.App {
         |""".stripMargin
     )
 
+    case class ParallelInterpreter[G[_]](f: Program.App ~> G)(implicit ev: Applicative[G]) extends (FA[Program.App, *] ~> G) {
+      override def apply[A](fa: FA[Program.App, A]): G[A] = fa.foldMap(f)
+    }
+
+    val urioApp = new Applicative[URIO[Clock, *]] {
+      override def pure[A](x: A): URIO[Clock, A]                                         = ???
+      override def ap[A, B](ff: URIO[Clock, A => B])(fa: URIO[Clock, A]): URIO[Clock, B] = ???
+    }
+
     Program.apply
-      .foldMap(interpreter)
+      .foldMap(ParallelInterpreter(interpreter)(urioApp))
       .map(_ => 0)
   }
 }

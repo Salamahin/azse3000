@@ -65,11 +65,14 @@ object Program {
   type App[A]        = EitherK[UIOps, EitherK[DelayOps, EitherK[BlobStorageOps, ParsingOps, *], *], A]
   type SRC_DST_BLOBS = (CloudBlockBlob, CloudBlockBlob)
 
-  def apply(implicit ui: UserInterface[App], delays: Delays[App], parser: Parser[App], blobStorage: BlobStorage[App]) = {
+  def apply[F[_]](implicit ui: UserInterface[F], delays: Delays[F], parser: Parser[F], blobStorage: BlobStorage[F]) = {
     def listAndProcessBlobs[T](from: Path, descr: Description)(
       f: CloudBlockBlob => FA[App, T]
     ) = {
       import cats.implicits._
+      import cats.syntax.parallel._
+      import cats.instances.vector._
+
       for {
         initial <- (blobStorage
           .startListing(from)

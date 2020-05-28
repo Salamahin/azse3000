@@ -32,9 +32,11 @@ class BlobStorageInterpreter(
         .map(b => b.asInstanceOf[CloudBlockBlob])
         .toSeq
 
-    override def next: Option[ListingPage] =
+    override def next: Option[ListingPage] = {
+      println("list next")
       if (!rs.getHasMoreResults) None
       else Some(new ListingPageImpl(cont, prefix, listBlobs(cont, prefix, Some(rs))))
+    }
   }
 
   override def apply[A](fa: BlobStorageOps[A]) =
@@ -67,7 +69,14 @@ class BlobStorageInterpreter(
           .mapError(th => AzureFailure(s"Failed to remove ${blob.getUri}", th))
           .either
 
-      case SizeOfBlobBytes(blob) => UIO { blob.downloadAttributes(); blob.getProperties.getLength }
+      case SizeOfBlobBytes(blob) => UIO {
+        println("size of blob start")
+        Thread.sleep(2000)
+        blob.downloadAttributes()
+        val l = blob.getProperties.getLength
+        println("size of blob finish")
+        l
+      }
 
       case StartCopy(src, b, dst) =>
         Task {

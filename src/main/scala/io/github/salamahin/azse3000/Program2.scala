@@ -1,7 +1,8 @@
 package io.github.salamahin.azse3000
 import java.util.concurrent.TimeUnit
 
-import scalaz.{Applicative, Free, FreeAp, Inject, ~>}
+import cats.free.{Free, FreeApplicative}
+import cats.{Applicative, InjectK, ~>}
 import zio.{UIO, ZIO}
 
 object Program2 extends zio.App {
@@ -12,7 +13,7 @@ object Program2 extends zio.App {
   final case class Baz() extends Algebra[Unit]
   final case class Qux() extends Algebra[Unit]
 
-  final case class MyAlgebra[F[_]]()(implicit inj: Inject[Algebra, F]) {
+  final case class MyAlgebra[F[_]]()(implicit inj: InjectK[Algebra, F]) {
     def foo() = inj(Foo())
     def bar() = inj(Bar())
     def baz() = inj(Baz())
@@ -20,7 +21,7 @@ object Program2 extends zio.App {
   }
 
   object MyAlgebra {
-    implicit def myAlgebra[F[_]](implicit I: Inject[Algebra, F]) = new MyAlgebra[F]
+    implicit def myAlgebra[F[_]](implicit I: InjectK[Algebra, F]) = new MyAlgebra[F]
   }
 
   val interpret =
@@ -49,38 +50,38 @@ object Program2 extends zio.App {
             UIO {
               println("qux start")
               TimeUnit.SECONDS.sleep(5)
-              println("foo end")
+              println("qux end")
             }
         }
     }
 
   def program(implicit alg: MyAlgebra[Algebra]) = {
     import alg._
-    import scalaz.syntax.applicative._
 
     for {
-      _ <- Free.liftF((FreeAp.lift(foo()) |@| FreeAp.lift(bar())) {
+      _ <- Free.liftF((FreeApplicative.lift(foo()) map2 FreeApplicative.lift(bar())) {
         case (_, _) => ()
       })
-      _ <- Free.liftF(FreeAp.lift(baz()))
-      _ <- Free.liftF(FreeAp.lift(qux()))
+      _ <- Free.liftF(FreeApplicative.lift(baz()))
+      _ <- Free.liftF(FreeApplicative.lift(qux()))
     } yield ()
   }
 
-  final case class ParallelInterpreter[G[_]](f: Algebra ~> G)(implicit ev: Applicative[G]) extends (FreeAp[Algebra, *] ~> G) {
+  final case class ParallelInterpreter[G[_]](f: Algebra ~> G)(implicit ev: Applicative[G]) extends (FreeApplicative[Algebra, *] ~> G) {
 
-    override def apply[A](fa: FreeAp[Algebra, A]): G[A] = fa.foldMap(f)
+    override def apply[A](fa: FreeApplicative[Algebra, A]): G[A] = fa.foldMap(f)
   }
 
   override def run(args: List[String]): ZIO[zio.ZEnv, Nothing, Int] = {
     import MyAlgebra._
     import zio._
-    import zio.interop.scalaz72._
+    import zio.interop.catz._
 
     implicit val parallelTaskApplicative = new Applicative[UIO] {
-      def point[A](a: => A)                                 = UIO(a)
-      def ap[A, B](a: => UIO[A])(f: => UIO[A => B]): UIO[B] = apply2(f, a)(_(_))
-      override def apply2[A, B, C](a: => UIO[A], b: => UIO[B])(f: (A, B) => C): UIO[C] = {
+      override def pure[A](x: A): UIO[A]                         = UIO(x)
+      override def ap[A, B](ff: UIO[A => B])(fa: UIO[A]): UIO[B] = apply2(ff, fa)(_(_))
+
+      def apply2[A, B, C](a: => UIO[A], b: => UIO[B])(f: (A, B) => C): UIO[C] = {
         (a zipWithPar b)(f)
       }
     }

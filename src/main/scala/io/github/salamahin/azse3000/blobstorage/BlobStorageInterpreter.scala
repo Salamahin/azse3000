@@ -24,30 +24,31 @@ class BlobStorageInterpreter(
       null
     )
 
-  private class ListingPageImpl(cont: CloudBlobContainer, prefix: Prefix, rs: ResultSegment[ListBlobItem]) extends ListingPage {
-    import scala.jdk.CollectionConverters._
-
-    override def blobs: Seq[CloudBlockBlob] =
-      rs.getResults.asScala
-        .map(b => b.asInstanceOf[CloudBlockBlob])
-        .toSeq
-
-    override def next: Option[ListingPage] = {
-      println("list next")
-      if (!rs.getHasMoreResults) None
-      else Some(new ListingPageImpl(cont, prefix, listBlobs(cont, prefix, Some(rs))))
-    }
-  }
+//  private class ListingPageImpl(cont: CloudBlobContainer, prefix: Prefix, rs: ResultSegment[ListBlobItem]) extends ListingPage {
+//    import scala.jdk.CollectionConverters._
+//
+//    override def blobs: Seq[CloudBlockBlob] =
+//      rs.getResults.asScala
+//        .map(b => b.asInstanceOf[CloudBlockBlob])
+//        .toSeq
+//
+//    override def next: Option[ListingPage] = {
+//      println("list next")
+//      if (!rs.getHasMoreResults) None
+//      else Some(new ListingPageImpl(cont, prefix, listBlobs(cont, prefix, Some(rs))))
+//    }
+//  }
 
   override def apply[A](fa: BlobStorageOps[A]) =
     fa match {
       case StartListing(inPath) =>
-        Task { container(inPath) }
-          .map(c => new ListingPageImpl(c, inPath.prefix, listBlobs(c, inPath.prefix, None)): ListingPage)
-          .mapError(th => AzureFailure(s"Failed to list blobs in $inPath", th))
-          .either
+//        Task { container(inPath) }
+//          .map(c => new ListingPageImpl(c, inPath.prefix, listBlobs(c, inPath.prefix, None)): ListingPage)
+//          .mapError(th => AzureFailure(s"Failed to list blobs in $inPath", th))
+//          .either
+        ???
 
-      case ContinueListing(prevPage) => UIO { prevPage.next }
+      case ContinueListing(prevPage) => /*UIO { prevPage.next }*/ ???
 
       case IsCopied(blob) =>
         UIO {

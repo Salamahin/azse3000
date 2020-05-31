@@ -3,5 +3,5 @@ import com.microsoft.azure.storage.blob.CloudBlockBlob
 
 trait ListingPage {
   def blobs: Seq[CloudBlockBlob]
-  def next: Option[ListingPage]
+  def hasNext: Boolean
 }

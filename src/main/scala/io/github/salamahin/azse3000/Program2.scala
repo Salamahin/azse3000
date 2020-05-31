@@ -8,16 +8,16 @@ import zio.{UIO, ZIO}
 object Program2 extends zio.App {
 
   sealed trait Algebra[A]
-  final case class Foo() extends Algebra[Unit]
-  final case class Bar() extends Algebra[Unit]
-  final case class Baz() extends Algebra[Unit]
-  final case class Qux() extends Algebra[Unit]
+  final case class Foo(i: Int) extends Algebra[Unit]
+  final case class Bar(i: Int) extends Algebra[Unit]
+  final case class Baz()       extends Algebra[Unit]
+  final case class Qux()       extends Algebra[Unit]
 
   final case class MyAlgebra[F[_]]()(implicit inj: InjectK[Algebra, F]) {
-    def foo() = inj(Foo())
-    def bar() = inj(Bar())
-    def baz() = inj(Baz())
-    def qux() = inj(Qux())
+    def foo(i: Int) = inj(Foo(i))
+    def bar(i: Int) = inj(Bar(i))
+    def baz()       = inj(Baz())
+    def qux()       = inj(Qux())
   }
 
   object MyAlgebra {
@@ -28,15 +28,15 @@ object Program2 extends zio.App {
     new (Algebra ~> UIO) {
       override def apply[A](fa: Algebra[A]): UIO[A] =
         fa match {
-          case Foo() =>
+          case Foo(i) =>
             UIO {
-              println("foo start")
+              println(s"foo($i) start")
               TimeUnit.SECONDS.sleep(5)
               println("foo end")
             }
-          case Bar() =>
+          case Bar(i) =>
             UIO {
-              println("bar start")
+              println(s"bar($i) start")
               TimeUnit.SECONDS.sleep(5)
               println("bar end")
             }
@@ -57,11 +57,16 @@ object Program2 extends zio.App {
 
   def program(implicit alg: MyAlgebra[Algebra]) = {
     import alg._
+    import cats.implicits._
+
+    val is = Vector(1, 2, 3)
 
     for {
-      _ <- Free.liftF((FreeApplicative.lift(foo()) map2 FreeApplicative.lift(bar())) {
-        case (_, _) => ()
-      })
+      _ <- Free.liftF(is
+        .map(x => foo(x))
+        .traverse(FreeApplicative.lift)
+      )
+
       _ <- Free.liftF(FreeApplicative.lift(baz()))
       _ <- Free.liftF(FreeApplicative.lift(qux()))
     } yield ()

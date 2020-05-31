@@ -7,8 +7,9 @@ package object blobstorage {
 
   sealed trait BlobStorageOps[T]
   final case class StartListing(inPath: Path)                            extends BlobStorageOps[Either[AzureFailure, ListingPage]]
-  final case class StartCopy(src: Path, blob: CloudBlockBlob, dst: Path) extends BlobStorageOps[Either[AzureFailure, CloudBlockBlob]]
   final case class ContinueListing(prevPage: ListingPage)                extends BlobStorageOps[Option[ListingPage]]
+
+  final case class StartCopy(src: Path, blob: CloudBlockBlob, dst: Path) extends BlobStorageOps[Either[AzureFailure, CloudBlockBlob]]
   final case class IsCopied(blob: CloudBlockBlob)                        extends BlobStorageOps[Either[AzureFailure, Boolean]]
   final case class RemoveBlob(blob: CloudBlockBlob)                      extends BlobStorageOps[Either[AzureFailure, Unit]]
   final case class SizeOfBlobBytes(blob: CloudBlockBlob)                 extends BlobStorageOps[Long]

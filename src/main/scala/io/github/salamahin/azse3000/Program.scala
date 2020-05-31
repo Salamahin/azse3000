@@ -1,76 +1,34 @@
-package io.github.salamahin.azse3000
-
-import cats.data.{EitherK, EitherT}
-import cats.free.Free._
-import cats.free.FreeApplicative.FA
-import cats.free.{Free, FreeApplicative}
-import cats.{Functor, Monad}
-import com.microsoft.azure.storage.blob.CloudBlockBlob
-import io.github.salamahin.azse3000.blobstorage._
-import io.github.salamahin.azse3000.delay.{DelayOps, Delays}
-import io.github.salamahin.azse3000.parsing.{Parser, ParsingOps}
-import io.github.salamahin.azse3000.shared._
-import io.github.salamahin.azse3000.ui.{UIOps, UserInterface}
-
-import scala.annotation.tailrec
-
-object ProgramSyntax {
-  implicit class LiftSyntax[F[_], A](fa: F[A]) {
-    def liftFree: Free[F, A] = Free.liftF(fa)
-    def liftFA: FA[F, A]     = FreeApplicative.lift(fa)
-  }
-
-  implicit class MonadSyntax[T](value: T) {
-    def pureMonad[F[_]: Monad] = Monad[F].pure(value)
-  }
-
-  implicit class ToEitherTSyntax[F[_], L, R](either: F[Either[L, R]]) {
-    def toEitherT = EitherT(either)
-  }
-
-  implicit class ToRightEitherTSyntax[F[_]: Functor, A](fa: F[A]) {
-    def toRightEitherT[L] = EitherT.right[L](fa)
-  }
-}
-
-trait ActionInterpret[T] {
-  def run(term: Action): T
-}
-
-object ActionInterpret {
-  def interpret[T](int: ActionInterpret[T])(expression: Expression): Vector[T] = {
-    @tailrec
-    def iter(expressions: List[Expression], acc: Vector[T]): Vector[T] =
-      expressions match {
-        case Nil                      => acc
-        case (head: Action) :: tail   => iter(tail, acc :+ int.run(head))
-        case And(left, right) :: tail => iter(left :: right :: tail, acc)
-      }
-
-    iter(expression :: Nil, Vector.empty)
-  }
-}
-
-object Program {
-
-  import ProgramSyntax._
-  import cats.instances.either._
-  import cats.instances.vector._
-  import cats.syntax.alternative._
-  import cats.syntax.apply._
-  import cats.syntax.bifunctor._
-  import cats.syntax.either._
-  import cats.syntax.traverse._
-
-  type App[A]        = EitherK[UIOps, EitherK[DelayOps, EitherK[BlobStorageOps, ParsingOps, *], *], A]
-  type SRC_DST_BLOBS = (CloudBlockBlob, CloudBlockBlob)
-
-  def apply(implicit ui: UserInterface[App], delays: Delays[App], parser: Parser[App], blobStorage: BlobStorage[App]) = {
+//package io.github.salamahin.azse3000
+//
+//import cats.Monad
+//import cats.data.EitherK
+//import cats.free.Free._
+//import cats.free.FreeApplicative.FA
+//import cats.free.{Free, FreeApplicative}
+//import com.microsoft.azure.storage.blob.CloudBlockBlob
+//import io.github.salamahin.azse3000.blobstorage._
+//import io.github.salamahin.azse3000.delay.{DelayOps, Delays}
+//import io.github.salamahin.azse3000.parsing.{Parser, ParsingOps}
+//import io.github.salamahin.azse3000.shared._
+//import io.github.salamahin.azse3000.ui.{UIOps, UserInterface}
+//
+//object Program {
+//
+//  import cats.instances.either._
+//  import cats.instances.vector._
+//  import cats.syntax.alternative._
+//  import cats.syntax.bifunctor._
+//  import cats.syntax.either._
+//  import cats.syntax.traverse._
+//
+//  type App[A]        = EitherK[UIOps, EitherK[DelayOps, EitherK[BlobStorageOps, ParsingOps, *], *], A]
+//  type SRC_DST_BLOBS = (CloudBlockBlob, CloudBlockBlob)
+//
+//  def apply(implicit ui: UserInterface[App], delays: Delays[App], parser: Parser[App], blobStorage: BlobStorage[App]) = {
 //    def listAndProcessBlobs[T](from: Path, descr: Description)(
 //      f: CloudBlockBlob => FA[App, T]
 //    ) = {
 //      import cats.implicits._
-//      import cats.syntax.parallel._
 //      import cats.instances.vector._
 //
 //      for {
@@ -310,7 +268,7 @@ object Program {
 //        .toRightEitherT[AzseException]
 //
 //    } yield ()).value
-
-    ???
-  }
-}
+//
+//    ???
+//  }
+//}

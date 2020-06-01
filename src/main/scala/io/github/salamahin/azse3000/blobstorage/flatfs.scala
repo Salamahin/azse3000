@@ -1,128 +1,133 @@
 package io.github.salamahin.azse3000.blobstorage
 import cats.data.EitherT
 import cats.{InjectK, Monad, Monoid}
-import com.microsoft.azure.storage.blob.{CloudBlockBlob, CopyStatus}
+import io.github.salamahin.azse3000.blobstorage.MetafilessBlobStorageProgram._
 import io.github.salamahin.azse3000.shared.{AzureFailure, Path}
 
 import scala.annotation.tailrec
 
 sealed trait MetafilelessOps[T]
-final case class StartListing2(inPath: Path)              extends MetafilelessOps[Either[AzureFailure, ListingPage]]
-final case class ContinueListing2(prevPage: ListingPage)  extends MetafilelessOps[Either[AzureFailure, ListingPage]]
-final case class DownloadAttributes(blob: CloudBlockBlob) extends MetafilelessOps[Either[AzureFailure, CloudBlockBlob]]
+final case class ListPage(inPath: Path, prev: Option[BlobsPage2]) extends MetafilelessOps[Either[AzureFailure, BlobsPage2]]
+final case class DownloadAttributes(blob: Blob)                   extends MetafilelessOps[Either[AzureFailure, Blob]]
+final case class WaitForCopyStateUpdate()                         extends MetafilelessOps[Unit]
 
 final class Metafileless[F[_]]()(implicit inj: InjectK[MetafilelessOps, F]) {
-  def initPage(inPath: Path)                   = inj(StartListing2(inPath))
-  def nextPage(tkn: ListingPage)               = inj(ContinueListing2(tkn))
-  def downloadAttributes(blob: CloudBlockBlob) = inj(DownloadAttributes(blob))
+  def listPage(inPath: Path, prev: Option[BlobsPage2]) = inj(ListPage(inPath, prev))
+  def downloadAttributes(blob: Blob)                   = inj(DownloadAttributes(blob))
+  def waitForCopyStateUpdate()                         = inj(WaitForCopyStateUpdate())
 }
 
 object Metafileless {
   implicit def metafiless[F[_]](implicit inj: InjectK[MetafilelessOps, F]): Metafileless[F] = new Metafileless[F]
 }
 
-final case class MappedBlob[T](src: CloudBlockBlob, mapped: T)
-final case class CopyResult(copied: Vector[CloudBlockBlob], errors: Vector[AzureFailure])
+trait BlobsPage2 {
+  def blobs: Seq[Blob]
+  def hasNext: Boolean
+}
+
+trait Blob {
+  def isCopied: Either[AzureFailure, Boolean]
+}
+
+final case class MappedBlob[T](src: Blob, mapped: T)
+final case class CopyResult(copied: Vector[Blob], errors: Vector[AzureFailure])
 
 object MetafilessBlobStorageProgram {
-
-  final case class InnerCopyResult(copied: Vector[CloudBlockBlob], pending: Vector[CloudBlockBlob], errors: Vector[AzureFailure])
+  type Algebra[T] = MetafilelessOps[T]
+  final case class InnerCopyResult(copied: Vector[Blob], pending: Vector[Blob], errors: Vector[AzureFailure])
 
   implicit val copyResultMonoid = new Monoid[InnerCopyResult] {
     override def empty                                           = InnerCopyResult(Vector.empty, Vector.empty, Vector.empty)
     override def combine(x: InnerCopyResult, y: InnerCopyResult) = InnerCopyResult(x.copied ++ y.copied, x.pending ++ y.pending, x.errors ++ y.errors)
   }
+}
 
-  type Algebra[T] = MetafilelessOps[T]
-  def program(implicit m: Metafileless[Algebra]) = {
-    import cats.implicits._
-    import io.github.salamahin.azse3000.shared.Program._
-    import m._
+class MetafilessBlobStorageProgram(implicit m: Metafileless[Algebra]) {
 
-    def listAndProcessBlobs[T](from: Path)(f: CloudBlockBlob => Algebra[T]) = {
-      def mapBlobs(thatPage: ListingPage, acc: Vector[MappedBlob[T]]) =
-        thatPage
-          .blobs
-          .toVector
-          .traverse(blob => f(blob).liftFA.map(MappedBlob(blob, _)))
-          .map(x => acc ++ x)
+  import cats.implicits._
+  import io.github.salamahin.azse3000.shared.Program._
+  import m._
 
-      def mapThatPageAndListNext(thatPage: ListingPage, acc: Vector[MappedBlob[T]]) = {
-        (nextPage(thatPage).liftFA map2 mapBlobs(thatPage, acc)) {
-          case (nextPage, mappedBlobs) => nextPage.map(page => (page, mappedBlobs))
+  def listAndProcessBlobs[T](from: Path)(f: Blob => Algebra[T]) = {
+    def mapBlobs(thatPage: BlobsPage2, acc: Vector[MappedBlob[T]]) =
+      thatPage
+        .blobs
+        .toVector
+        .traverse(blob => f(blob).liftFA.map(MappedBlob(blob, _)))
+        .map(x => acc ++ x)
+
+    def mapThatPageAndListNext(thatPage: BlobsPage2, acc: Vector[MappedBlob[T]]) = {
+      (listPage(from, Some(thatPage)).liftFA map2 mapBlobs(thatPage, acc)) {
+        case (nextPage, mappedBlobs) => nextPage.map(page => (page, mappedBlobs))
+      }
+    }
+
+    for {
+      initPage <- listPage(from, None).liftFA.liftFree.toEitherT
+      initAcc = Vector.empty[MappedBlob[T]]
+
+      mapped <- Monad[EitherT[PRG[Algebra, *], AzureFailure, *]]
+        .tailRecM(initPage, initAcc) {
+          case (page, acc) =>
+            if (page.hasNext)
+              mapThatPageAndListNext(page, acc)
+                .liftFree
+                .toEitherT
+                .map(_.asLeft[Vector[MappedBlob[T]]])
+            else
+              mapBlobs(page, acc)
+                .liftFree
+                .toRightEitherT[AzureFailure]
+                .map(_.asRight[(BlobsPage2, Vector[MappedBlob[T]])])
         }
+
+    } yield mapped
+  }
+
+  def waitUntilBlobsCopied(blobs: Vector[Blob]) = {
+    @tailrec
+    def separateBlobToCopiedPendingAndFailed(
+      blobs: Vector[Blob],
+      copied: Vector[Blob],
+      pending: Vector[Blob],
+      failed: Vector[AzureFailure]
+    ): (Vector[Blob], Vector[Blob], Vector[AzureFailure]) =
+      blobs match {
+        case Vector() => (copied, pending, failed)
+        case blob +: remaining =>
+          blob.isCopied match {
+            case Left(failure) => separateBlobToCopiedPendingAndFailed(remaining, copied, pending, failed :+ failure)
+            case Right(true)   => separateBlobToCopiedPendingAndFailed(remaining, copied :+ blob, pending, failed)
+            case Right(false)  => separateBlobToCopiedPendingAndFailed(remaining, copied, pending :+ blob, failed)
+          }
       }
 
-      for {
-        initPage <- initPage(from).liftFA.liftFree.toEitherT
-        initAcc = Vector.empty[MappedBlob[T]]
+    def checkBlobsCopyState(of: Vector[Blob]) =
+      of
+        .traverse(x => downloadAttributes(x).liftFA)
+        .map { blobs =>
+          val (downloadAttributesFailed, checked) = blobs.separate
+          val (copied, pending, copyFailed)       = separateBlobToCopiedPendingAndFailed(checked, Vector.empty, Vector.empty, Vector.empty)
 
-        mapped <- Monad[EitherT[PRG[Algebra, *], AzureFailure, *]]
-          .tailRecM(initPage, initAcc) {
-            case (page, acc) =>
-              if (page.hasNext)
-                mapThatPageAndListNext(page, acc)
-                  .liftFree
-                  .toEitherT
-                  .map(_.asLeft[Vector[MappedBlob[T]]])
-              else
-                mapBlobs(page, acc)
-                  .liftFree
-                  .toRightEitherT[AzureFailure]
-                  .map(_.asRight[(ListingPage, Vector[MappedBlob[T]])])
-          }
-
-      } yield mapped
-    }
-
-    def waitUntilBlobsCopied(blobs: Vector[CloudBlockBlob]) = {
-      @tailrec
-      def separateBlobToCopiedPendingAndFailed(
-        blobs: Vector[CloudBlockBlob],
-        copied: Vector[CloudBlockBlob],
-        pending: Vector[CloudBlockBlob],
-        failed: Vector[AzureFailure]
-      ): (Vector[CloudBlockBlob], Vector[CloudBlockBlob], Vector[AzureFailure]) =
-        blobs match {
-          case Vector() => (copied, pending, failed)
-          case blob +: remaining =>
-            val state  = blob.getCopyState
-            val status = state.getStatus
-
-            if (status == CopyStatus.SUCCESS)
-              (copied :+ blob, pending, failed)
-            else if (status == CopyStatus.PENDING)
-              (copied, pending :+ blob, failed)
-            else {
-              val msg     = s"Unexpected copy status of blob ${blob.getUri}: $status"
-              val failure = AzureFailure(msg, new IllegalStateException(state.getStatusDescription))
-
-              separateBlobToCopiedPendingAndFailed(remaining, copied, pending, failed :+ failure)
-            }
+          InnerCopyResult(copied, pending, downloadAttributesFailed ++ copyFailed)
         }
 
-      def checkBlobsCopyState(of: Vector[CloudBlockBlob]) =
-        of
-          .traverse(x => downloadAttributes(x).liftFA)
-          .map { blobs =>
-            val (downloadAttributesFailed, checked) = blobs.separate
-            val (copied, pending, copyFailed)       = separateBlobToCopiedPendingAndFailed(checked, Vector.empty, Vector.empty, Vector.empty)
+    Monad[PRG[Algebra, *]]
+      .tailRecM((blobs, Vector.empty[InnerCopyResult])) {
+        case (toCheck, acc) =>
+          val checkResult = checkBlobsCopyState(toCheck).liftFree
 
-            InnerCopyResult(copied, pending, downloadAttributesFailed ++ copyFailed)
-          }
+          val isPendingEmpty    = checkResult.map(_.pending.isEmpty)
+          val returnAccumulated = checkResult.map(x => (acc :+ x).asRight[(Vector[Blob], Vector[InnerCopyResult])])
+          val nextIter          = checkResult.map(x => (x.pending, acc :+ x).asLeft[Vector[InnerCopyResult]])
 
-      Monad[PRG[Algebra, *]]
-        .tailRecM((blobs, Vector.empty[InnerCopyResult])) {
-          case (toCheck, acc) =>
-            for {
-              result @ InnerCopyResult(_, pending, _) <- checkBlobsCopyState(toCheck).liftFree
-            } yield {
-              if (pending.isEmpty) (acc :+ result).asRight[(Vector[CloudBlockBlob], Vector[InnerCopyResult])]
-              else (pending, acc :+ result).asLeft[Vector[InnerCopyResult]]
-            }
-        }
-        .map { Monoid[InnerCopyResult].combineAll }
-        .map(icr => CopyResult(icr.copied, icr.errors))
-    }
+          Monad[PRG[Algebra, *]].ifM(isPendingEmpty)(
+            returnAccumulated,
+            waitForCopyStateUpdate().liftFA.liftFree *> nextIter
+          )
+      }
+      .map { Monoid[InnerCopyResult].combineAll }
+      .map(icr => CopyResult(icr.copied, icr.errors))
   }
 }

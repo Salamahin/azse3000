@@ -72,27 +72,13 @@ object Program2 extends zio.App {
     } yield ()
   }
 
-  final case class ParallelInterpreter[G[_]](f: Algebra ~> G)(implicit ev: Applicative[G]) extends (FreeApplicative[Algebra, *] ~> G) {
-
-    override def apply[A](fa: FreeApplicative[Algebra, A]): G[A] = fa.foldMap(f)
-  }
-
   override def run(args: List[String]): ZIO[zio.ZEnv, Nothing, Int] = {
     import MyAlgebra._
-    import zio._
     import zio.interop.catz._
-
-    implicit val parallelTaskApplicative = new Applicative[UIO] {
-      override def pure[A](x: A): UIO[A]                         = UIO(x)
-      override def ap[A, B](ff: UIO[A => B])(fa: UIO[A]): UIO[B] = apply2(ff, fa)(_(_))
-
-      def apply2[A, B, C](a: => UIO[A], b: => UIO[B])(f: (A, B) => C): UIO[C] = {
-        (a zipWithPar b)(f)
-      }
-    }
+    import ParallelInterpreter._
 
     program
-      .foldMap(ParallelInterpreter(interpret)(parallelTaskApplicative))
+      .foldMap(ParallelInterpreter(interpret)(ParallelInterpreter.uioApplicative))
       .map(_ => 0)
   }
 }

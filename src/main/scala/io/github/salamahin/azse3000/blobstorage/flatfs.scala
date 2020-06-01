@@ -1,24 +1,24 @@
 package io.github.salamahin.azse3000.blobstorage
-import cats.data.EitherT
+import cats.data.{EitherK, EitherT}
 import cats.{InjectK, Monad, Monoid}
 import io.github.salamahin.azse3000.blobstorage.MetafilessBlobStorageProgram._
 import io.github.salamahin.azse3000.shared.{AzureFailure, Path}
 
 import scala.annotation.tailrec
 
-sealed trait MetafilelessOps[T]
-final case class ListPage(inPath: Path, prev: Option[BlobsPage2]) extends MetafilelessOps[Either[AzureFailure, BlobsPage2]]
-final case class DownloadAttributes(blob: Blob)                   extends MetafilelessOps[Either[AzureFailure, Blob]]
-final case class WaitForCopyStateUpdate()                         extends MetafilelessOps[Unit]
+sealed trait BlobStorageOps[T]
+final case class ListPage(inPath: Path, prev: Option[BlobsPage2]) extends BlobStorageOps[Either[AzureFailure, BlobsPage2]]
+final case class DownloadAttributes(blob: Blob)                   extends BlobStorageOps[Either[AzureFailure, Blob]]
+final case class WaitForCopyStateUpdate()                         extends BlobStorageOps[Unit]
 
-final class Metafileless[F[_]]()(implicit inj: InjectK[MetafilelessOps, F]) {
+final class BlobStorage[F[_]]()(implicit inj: InjectK[BlobStorageOps, F]) {
   def listPage(inPath: Path, prev: Option[BlobsPage2]) = inj(ListPage(inPath, prev))
   def downloadAttributes(blob: Blob)                   = inj(DownloadAttributes(blob))
   def waitForCopyStateUpdate()                         = inj(WaitForCopyStateUpdate())
 }
 
-object Metafileless {
-  implicit def metafiless[F[_]](implicit inj: InjectK[MetafilelessOps, F]): Metafileless[F] = new Metafileless[F]
+object BlobStorage {
+  implicit def metafiless[F[_]](implicit inj: InjectK[BlobStorageOps, F]): BlobStorage[F] = new BlobStorage[F]
 }
 
 trait BlobsPage2 {
@@ -34,7 +34,6 @@ final case class MappedBlob[T](src: Blob, mapped: T)
 final case class CopyResult(copied: Vector[Blob], errors: Vector[AzureFailure])
 
 object MetafilessBlobStorageProgram {
-  type Algebra[T] = MetafilelessOps[T]
   final case class InnerCopyResult(copied: Vector[Blob], pending: Vector[Blob], errors: Vector[AzureFailure])
 
   implicit val copyResultMonoid = new Monoid[InnerCopyResult] {
@@ -43,7 +42,8 @@ object MetafilessBlobStorageProgram {
   }
 }
 
-class MetafilessBlobStorageProgram(implicit m: Metafileless[Algebra]) {
+class MetafilessBlobStorageProgram[F[_]](implicit m: BlobStorage[EitherK[BlobStorageOps, F, *]]) {
+  type Algebra[T] = EitherK[BlobStorageOps, F, T]
 
   import cats.implicits._
   import io.github.salamahin.azse3000.shared.Program._

@@ -1,71 +1,47 @@
 package io.github.salamahin.azse3000.blobstorage
 import cats.~>
+import io.github.salamahin.azse3000.ParallelInterpreter
 import io.github.salamahin.azse3000.shared._
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
-import zio.{Ref, UIO}
+import zio.{DefaultRuntime, UIO}
+
+case class InMemoryBlob(name: String) extends Blob {
+  override def isCopied: Either[AzureFailure, Boolean] = Right(true)
+}
 
 class MetafilessBlobStorageProgramTest extends AnyFunSuite with Matchers {
-
-  val actionLog = Ref.make(Vector.empty[String])
-
-  case class InMemoryBlob(name: String) extends Blob {
-    override def isCopied: Either[AzureFailure, Boolean] = Right(true)
-  }
-
-  class TestInterpreter(pages: List[List[Blob]] = Nil) extends (MetafilelessOps ~> UIO) {
-    def addBlobOnPage(blobs: List[Blob]) = new TestInterpreter(pages :+ blobs)
-
-    private def remainedPages = Ref.make(pages)
-
-    private def nextPage =
-      for {
-        pages    <- remainedPages
-        allPages <- pages.get
-        _        <- pages.set(allPages.tail)
-      } yield new BlobsPage2 {
-        override def blobs: Seq[Blob] = allPages.head
-        override def hasNext: Boolean = allPages.size > 1
-      }
-
-    private def log(msg: String) =
-      for {
-        log <- actionLog
-        _   <- log.update(_ :+ msg)
-      } yield ()
-
-    override def apply[A](fa: MetafilelessOps[A]): UIO[A] =
-      fa match {
-        case ListPage(inPath, _) =>
-          for {
-            _    <- log(s"List in $inPath")
-            page <- nextPage
-          } yield Right[AzureFailure, BlobsPage2](page)
-
-        case DownloadAttributes(blob) => ???
-        case WaitForCopyStateUpdate() => ???
-      }
-  }
-
-  val path = Path(
+  private val path = Path(
     AccountInfo(StorageAccount("test"), EnvironmentAlias("tst")),
     Container("container"),
     Prefix("prefix"),
     Secret("sas")
   )
 
-  test("") {
-    import cats.implicits._
+  class TestActionInterpreter extends (TestAction ~> UIO) {
+    override def apply[A](fa: TestAction[A]): UIO[A] =
+      fa match {
+        case LogBlobOperation(blob) => UIO(println(s"New operation on blob $blob"))
+      }
+  }
 
-    val testee = new TestInterpreter()
-      .addBlobOnPage(InMemoryBlob("a") :: InMemoryBlob("b") :: Nil)
-      .addBlobOnPage(InMemoryBlob("c") :: Nil)
+  test("aaaaaa") {
+    import cats.syntax.eitherK._
+    import zio.interop.catz._
 
-    val a = new MetafilessBlobStorageProgram()
-      .listAndProcessBlobs(path)()
+    val blobOpsInterpreter = new TestBlobStorageOpsInterpreter(
+      List(
+        InMemoryBlob("a") :: InMemoryBlob("b") :: Nil,
+        InMemoryBlob("c") :: Nil
+      )
+    )
 
+    val program = new MetafilessBlobStorageProgram[TestAction]
+      .listAndProcessBlobs(path)(LogBlobOperation(_).rightc)
+      .value
+      .foldMap(ParallelInterpreter(blobOpsInterpreter or new TestActionInterpreter)(ParallelInterpreter.uioApplicative))
 
-
+    new DefaultRuntime {}.unsafeRunSync(program)
   }
 
 }

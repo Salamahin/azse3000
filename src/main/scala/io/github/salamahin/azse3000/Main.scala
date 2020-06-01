@@ -6,7 +6,6 @@ import cats.data.Kleisli
 import cats.free.Free
 import com.microsoft.azure.storage.StorageCredentialsSharedAccessSignature
 import com.microsoft.azure.storage.blob.{CloudBlobContainer, CloudBlockBlob}
-import io.github.salamahin.azse3000.blobstorage.BlobStorageInterpreter
 import io.github.salamahin.azse3000.delay.DelayInterpreter
 import io.github.salamahin.azse3000.parsing.ParseCommandInterpreter
 import io.github.salamahin.azse3000.shared._
@@ -41,34 +40,34 @@ object Main extends zio.App {
     implicit val environmentReader       = mapReader[Container, Secret](Container)
     implicit val environmentConfigReader = mapReader[EnvironmentAlias, EnvironmentConfig](EnvironmentAlias)
 
-    val conf = ConfigSource
-      .file("secrets.conf")
-      .loadOrThrow[Config]
-
-    val interpreter =
-      new UIInterpreter or
-        (new DelayInterpreter or
-          (new BlobStorageInterpreter(toContainer, toBlob, 2) or
-            new ParseCommandInterpreter(conf)))
-
-    import zio.interop.catz._
-
-    println(
-      """
-        |
-        | ▄▄▄      ▒███████▒  ██████ ▓█████
-        |▒████▄    ▒ ▒ ▒ ▄▀░▒██    ▒ ▓█   ▀
-        |▒██  ▀█▄  ░ ▒ ▄▀▒░ ░ ▓██▄   ▒███
-        |░██▄▄▄▄██   ▄▀▒   ░  ▒   ██▒▒▓█  ▄
-        | ▓█   ▓██▒▒███████▒▒██████▒▒░▒████▒
-        | ▒▒   ▓▒█░░▒▒ ▓░▒░▒▒ ▒▓▒ ▒ ░░░ ▒░ ░
-        |  ▒   ▒▒ ░░░▒ ▒ ░ ▒░ ░▒  ░ ░ ░ ░  ░
-        |  ░   ▒   ░ ░ ░ ░ ░░  ░  ░     ░
-        |      ░  ░  ░ ░          ░     ░  ░
-        |          ░
-        |
-        |""".stripMargin
-    )
+//    val conf = ConfigSource
+//      .file("secrets.conf")
+//      .loadOrThrow[Config]
+//
+//    val interpreter =
+//      new UIInterpreter or
+//        (new DelayInterpreter or
+//          (new BlobStorageInterpreter(toContainer, toBlob, 2) or
+//            new ParseCommandInterpreter(conf)))
+//
+//    import zio.interop.catz._
+//
+//    println(
+//      """
+//        |
+//        | ▄▄▄      ▒███████▒  ██████ ▓█████
+//        |▒████▄    ▒ ▒ ▒ ▄▀░▒██    ▒ ▓█   ▀
+//        |▒██  ▀█▄  ░ ▒ ▄▀▒░ ░ ▓██▄   ▒███
+//        |░██▄▄▄▄██   ▄▀▒   ░  ▒   ██▒▒▓█  ▄
+//        | ▓█   ▓██▒▒███████▒▒██████▒▒░▒████▒
+//        | ▒▒   ▓▒█░░▒▒ ▓░▒░▒▒ ▒▓▒ ▒ ░░░ ▒░ ░
+//        |  ▒   ▒▒ ░░░▒ ▒ ░ ▒░ ░▒  ░ ░ ░ ░  ░
+//        |  ░   ▒   ░ ░ ░ ░ ░░  ░  ░     ░
+//        |      ░  ░  ░ ░          ░     ░  ░
+//        |          ░
+//        |
+//        |""".stripMargin
+//    )
 //
 //    type ParIntepreter[A] = Kleisli[URIO[Clock, *], Free[Program.App, scala.Either[AzseException, Unit]], A]
 //    val a = new FunctionK[Program.App, ParIntepreter] {

@@ -2,7 +2,7 @@ package io.github.salamahin.azse3000
 import java.util.concurrent.TimeUnit
 
 import cats.free.{Free, FreeApplicative}
-import cats.{Applicative, InjectK, ~>}
+import cats.{InjectK, ~>}
 import zio.{UIO, ZIO}
 
 object Program2 extends zio.App {
@@ -62,9 +62,10 @@ object Program2 extends zio.App {
     val is = Vector(1, 2, 3)
 
     for {
-      _ <- Free.liftF(is
-        .map(x => foo(x))
-        .traverse(FreeApplicative.lift)
+      _ <- Free.liftF(
+        is
+          .map(x => foo(x))
+          .traverse(FreeApplicative.lift)
       )
 
       _ <- Free.liftF(FreeApplicative.lift(baz()))
@@ -75,7 +76,6 @@ object Program2 extends zio.App {
   override def run(args: List[String]): ZIO[zio.ZEnv, Nothing, Int] = {
     import MyAlgebra._
     import zio.interop.catz._
-    import ParallelInterpreter._
 
     program
       .foldMap(ParallelInterpreter(interpret)(ParallelInterpreter.uioApplicative))

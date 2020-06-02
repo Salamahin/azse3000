@@ -29,6 +29,4 @@ class TestBlobStorageOpsInterpreter(pages: Ref[List[List[Blob]]], log: Ref[List[
       case DownloadAttributes(blob) => ???
       case WaitForCopyStateUpdate() => ???
     }
-
-  "asdasda".takeRight(4)
 }

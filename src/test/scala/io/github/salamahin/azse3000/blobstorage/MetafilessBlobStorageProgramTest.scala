@@ -1,16 +1,19 @@
 package io.github.salamahin.azse3000.blobstorage
-import cats.~>
 import io.github.salamahin.azse3000.ParallelInterpreter
 import io.github.salamahin.azse3000.shared._
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
-import zio.{DefaultRuntime, UIO}
+import zio._
 
 case class InMemoryBlob(name: String) extends Blob {
   override def isCopied: Either[AzureFailure, Boolean] = Right(true)
+  override def toString: String                        = name
 }
 
 class MetafilessBlobStorageProgramTest extends AnyFunSuite with Matchers {
+  import cats.syntax.eitherK._
+  import zio.interop.catz._
+
   private val path = Path(
     AccountInfo(StorageAccount("test"), EnvironmentAlias("tst")),
     Container("container"),
@@ -18,30 +21,39 @@ class MetafilessBlobStorageProgramTest extends AnyFunSuite with Matchers {
     Secret("sas")
   )
 
-  class TestActionInterpreter extends (TestAction ~> UIO) {
-    override def apply[A](fa: TestAction[A]): UIO[A] =
-      fa match {
-        case LogBlobOperation(blob) => UIO(println(s"New operation on blob $blob"))
-      }
-  }
-
-  test("aaaaaa") {
-    import cats.syntax.eitherK._
-    import zio.interop.catz._
-
-    val blobOpsInterpreter = new TestBlobStorageOpsInterpreter(
-      List(
-        InMemoryBlob("a") :: InMemoryBlob("b") :: Nil,
-        InMemoryBlob("c") :: Nil
-      )
+  test("Listing of the next page is in parallel with blobs processing") {
+    val blobsOnPages = List(
+      InMemoryBlob("a") :: InMemoryBlob("b") :: Nil,
+      InMemoryBlob("c") :: Nil
     )
 
-    val program = new MetafilessBlobStorageProgram[TestAction]
-      .listAndProcessBlobs(path)(LogBlobOperation(_).rightc)
-      .value
-      .foldMap(ParallelInterpreter(blobOpsInterpreter or new TestActionInterpreter)(ParallelInterpreter.uioApplicative))
+    val program = for {
+      blobs <- Ref.make[List[List[Blob]]](blobsOnPages)
+      log   <- Ref.make[List[String]](Nil)
 
-    new DefaultRuntime {}.unsafeRunSync(program)
+      blobOpsInterpreter    = new TestBlobStorageOpsInterpreter(blobs, log)
+      testActionInterpreter = new TestActionInterpreter(log)
+
+      _ <- new MetafilessBlobStorageProgram[TestAction]
+        .listAndProcessBlobs(path)(LogBlobOperation(_).rightc)
+        .value
+        .foldMap(ParallelInterpreter(blobOpsInterpreter or testActionInterpreter)(ParallelInterpreter.zioApplicative))
+
+      logged <- log.get
+    } yield logged
+
+    new DefaultRuntime {}.unsafeRun(program) should contain inOrderOnly (
+      "List next batch in container@tst:/prefix start",
+      "Next batch in container@tst:/prefix listed",
+      "Operation on blob b start",
+      "Operation on blob a start",
+      "List next batch in container@tst:/prefix start",
+      "Next batch in container@tst:/prefix listed",
+      "Operation on blob a end",
+      "Operation on blob b end",
+      "Operation on blob c start",
+      "Operation on blob c end"
+    )
   }
 
 }

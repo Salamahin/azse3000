@@ -44,9 +44,3 @@ trait LogMatchers {
       }
     }
 }
-
-//class LogMatcher(matchers: Seq[LogMessageMatcher]) extends Matcher[Seq[String]] {
-//  override def apply(actual:  Seq[String]): MatchResult = matchers.foldLeft(actual) {
-//    case (lines, m) =>  ???
-//  }
-//}

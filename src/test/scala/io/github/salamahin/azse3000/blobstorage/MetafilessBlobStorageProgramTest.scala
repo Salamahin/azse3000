@@ -10,7 +10,7 @@ case class InMemoryBlob(name: String) extends Blob {
   override def toString: String                        = name
 }
 
-class MetafilessBlobStorageProgramTest extends AnyFunSuite with Matchers {
+class MetafilessBlobStorageProgramTest extends AnyFunSuite with Matchers with LogMatchers {
   import cats.syntax.eitherK._
   import zio.interop.catz._
 
@@ -42,17 +42,26 @@ class MetafilessBlobStorageProgramTest extends AnyFunSuite with Matchers {
       logged <- log.get
     } yield logged
 
-    new DefaultRuntime {}.unsafeRun(program) should contain inOrderOnly (
-      "List next batch in container@tst:/prefix start",
-      "Next batch in container@tst:/prefix listed",
-      "Operation on blob b start",
-      "Operation on blob a start",
-      "List next batch in container@tst:/prefix start",
-      "Next batch in container@tst:/prefix listed",
-      "Operation on blob a end",
-      "Operation on blob b end",
-      "Operation on blob c start",
-      "Operation on blob c end"
+    val log = new DefaultRuntime {}.unsafeRun(program)
+    log should containMessages(
+      inOrder(
+        "List next batch in container@tst:/prefix start",
+        "Next batch in container@tst:/prefix listed"
+      ),
+      inAnyOrder(
+        "Operation on blob b start",
+        "Operation on blob a start",
+        "List next batch in container@tst:/prefix start",
+      ),
+      inAnyOrder(
+        "Next batch in container@tst:/prefix listed",
+        "Operation on blob a end",
+        "Operation on blob b end",
+      ),
+      inOrder(
+        "Operation on blob c start",
+        "Operation on blob c end"
+      )
     )
   }
 

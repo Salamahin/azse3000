@@ -1,58 +1,36 @@
 package io.github.salamahin.azse3000.blobstorage
+import cats.Monad
 import cats.data.{EitherK, EitherT}
-import cats.{InjectK, Monad}
-import io.github.salamahin.azse3000.blobstorage.MetafilessBlobStorageProgram._
+import io.github.salamahin.azse3000.blobstorage.BlobStorageProgram._
 import io.github.salamahin.azse3000.shared.{AzureFailure, Path}
 
 import scala.annotation.tailrec
 
-sealed trait BlobStorageOps[T]
-final case class ListPage(inPath: Path, prev: Option[BlobsPage2]) extends BlobStorageOps[Either[AzureFailure, BlobsPage2]]
-final case class DownloadAttributes(blob: Blob)                   extends BlobStorageOps[Either[AzureFailure, Blob]]
-final case class WaitForCopyStateUpdate()                         extends BlobStorageOps[Unit]
-
-final class BlobStorage[F[_]]()(implicit inj: InjectK[BlobStorageOps, F]) {
-  def listPage(inPath: Path, prev: Option[BlobsPage2]) = inj(ListPage(inPath, prev))
-  def downloadAttributes(blob: Blob)                   = inj(DownloadAttributes(blob))
-  def waitForCopyStateUpdate()                         = inj(WaitForCopyStateUpdate())
-}
-
-object BlobStorage {
-  implicit def metafiless[F[_]](implicit inj: InjectK[BlobStorageOps, F]): BlobStorage[F] = new BlobStorage[F]
-}
-
-trait BlobsPage2 {
-  def blobs: Seq[Blob]
-  def hasNext: Boolean
-}
-
-trait Blob {
-  def isCopied: Either[AzureFailure, Boolean]
-}
-
-final case class MappedBlob[T](src: Blob, mapped: T)
-final case class CopyResult(copied: Vector[Blob], errors: Vector[AzureFailure])
-
-object MetafilessBlobStorageProgram {
+private object BlobStorageProgram {
   final case class InnerCopyResult(copied: Vector[Blob], pending: Vector[Blob], errors: Vector[AzureFailure])
 }
 
-class MetafilessBlobStorageProgram[F[_]](implicit m: BlobStorage[EitherK[BlobStorageOps, F, *]]) {
+class BlobStorageProgram[F[_]](implicit m: BlobStorage[EitherK[BlobStorageOps, F, *]]) {
   type Algebra[T] = EitherK[BlobStorageOps, F, T]
 
-  import cats.implicits._
+  import cats.instances.either._
+  import cats.instances.vector._
+  import cats.syntax.alternative._
+  import cats.syntax.apply._
+  import cats.syntax.either._
+  import cats.syntax.traverse._
   import io.github.salamahin.azse3000.shared.Program._
   import m._
 
   def listAndProcessBlobs[T](from: Path)(f: Blob => Algebra[T]) = {
-    def mapBlobs(thatPage: BlobsPage2, acc: Vector[MappedBlob[T]]) =
+    def mapBlobs(thatPage: BlobsPage, acc: Vector[MappedBlob[T]]) =
       thatPage
         .blobs
         .toVector
         .traverse(blob => f(blob).liftFA.map(MappedBlob(blob, _)))
         .map(x => acc ++ x)
 
-    def mapThatPageAndListNext(thatPage: BlobsPage2, acc: Vector[MappedBlob[T]]) = {
+    def mapThatPageAndListNext(thatPage: BlobsPage, acc: Vector[MappedBlob[T]]) = {
       (listPage(from, Some(thatPage)).liftFA map2 mapBlobs(thatPage, acc)) {
         case (nextPage, mappedBlobs) => nextPage.map(page => (page, mappedBlobs))
       }
@@ -74,7 +52,7 @@ class MetafilessBlobStorageProgram[F[_]](implicit m: BlobStorage[EitherK[BlobSto
               mapBlobs(page, acc)
                 .liftFree
                 .toRightEitherT[AzureFailure]
-                .map(_.asRight[(BlobsPage2, Vector[MappedBlob[T]])])
+                .map(_.asRight[(BlobsPage, Vector[MappedBlob[T]])])
         }
 
     } yield mapped
@@ -115,7 +93,8 @@ class MetafilessBlobStorageProgram[F[_]](implicit m: BlobStorage[EitherK[BlobSto
     Monad[PRG[Algebra, *]]
       .tailRecM((blobs, InnerCopyResult(Vector.empty, Vector.empty, Vector.empty))) {
         case (toCheck, previousCopyResult) =>
-          checkBlobsCopyState(toCheck, previousCopyResult).liftFree
+          checkBlobsCopyState(toCheck, previousCopyResult)
+            .liftFree
             .flatMap { checkResult =>
               val isPendingEmpty    = checkResult.pending.isEmpty
               val returnAccumulated = checkResult.asRight[(Vector[Blob], InnerCopyResult)].pureMonad[PRG[Algebra, *]]

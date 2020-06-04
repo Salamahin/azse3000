@@ -15,7 +15,7 @@ case class InMemoryBlob(name: String, private val checksUntilCopied: Int = 1) ex
   override def toString: String                        = name
 }
 
-class MetafilessBlobStorageProgramTest extends AnyFunSuite with Matchers with LogMatchers {
+class BlobStorageProgramTest extends AnyFunSuite with Matchers with LogMatchers {
   import cats.syntax.eitherK._
   import zio.interop.catz._
 
@@ -39,7 +39,7 @@ class MetafilessBlobStorageProgramTest extends AnyFunSuite with Matchers with Lo
       blobOpsInterpreter    = new TestBlobStorageOpsInterpreter(log).withPages(blobs)
       testActionInterpreter = new TestActionInterpreter(log)
 
-      _ <- new MetafilessBlobStorageProgram[TestAction]
+      _ <- new BlobStorageProgram[TestAction]
         .listAndProcessBlobs(path)(LogBlobOperation(_).rightc)
         .value
         .foldMap(ParallelInterpreter(blobOpsInterpreter or testActionInterpreter)(zioApplicative))
@@ -74,12 +74,12 @@ class MetafilessBlobStorageProgramTest extends AnyFunSuite with Matchers with Lo
     val blobsOnPages = Vector(InMemoryBlob("a", 1), InMemoryBlob("b", 2), InMemoryBlob("c", 3))
 
     val program = for {
-      log   <- Ref.make[List[String]](Nil)
+      log <- Ref.make[List[String]](Nil)
 
       blobOpsInterpreter    = new TestBlobStorageOpsInterpreter(log)
       testActionInterpreter = new TestActionInterpreter(log)
 
-      _ <- new MetafilessBlobStorageProgram[TestAction]
+      _ <- new BlobStorageProgram[TestAction]
         .waitUntilBlobsCopied(blobsOnPages)
         .foldMap(ParallelInterpreter(blobOpsInterpreter or testActionInterpreter)(zioApplicative))
 

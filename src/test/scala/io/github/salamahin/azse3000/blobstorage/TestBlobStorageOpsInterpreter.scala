@@ -18,7 +18,7 @@ class TestBlobStorageOpsInterpreter(log: Ref[List[String]]) extends (BlobStorage
     for {
       remainedPages <- _pages.get
       _             <- _pages.set(remainedPages.tail)
-    } yield new BlobsPage2 {
+    } yield new BlobsPage {
       override def blobs: Seq[Blob] = remainedPages.head
       override def hasNext: Boolean = remainedPages.size > 1
     }
@@ -31,7 +31,7 @@ class TestBlobStorageOpsInterpreter(log: Ref[List[String]]) extends (BlobStorage
           _    <- ZIO.sleep(200 millis)
           page <- nextPage
           _    <- log.update(_ :+ s"Next batch in $inPath listed")
-        } yield Right[AzureFailure, BlobsPage2](page)
+        } yield Right[AzureFailure, BlobsPage](page)
 
       case DownloadAttributes(blob) =>
         for {
@@ -43,5 +43,7 @@ class TestBlobStorageOpsInterpreter(log: Ref[List[String]]) extends (BlobStorage
           _ <- log.update(_ :+ "Waiting a bit for another blob status check attempt")
           _ <- ZIO.sleep(200 millis)
         } yield ()
+
+      case StartCopying(src, dst) => ???
     }
 }

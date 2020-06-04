@@ -2,7 +2,7 @@ package io.github.salamahin.azse3000
 import cats.free.FreeApplicative
 import cats.{Applicative, ~>}
 import zio.clock.Clock
-import zio.{UIO, URIO, ZIO}
+import zio.{URIO, ZIO}
 
 final case class ParallelInterpreter[F[_], G[_]](f: F ~> G)(implicit ev: Applicative[G]) extends (FreeApplicative[F, *] ~> G) {
   override def apply[A](fa: FreeApplicative[F, A]): G[A] = fa.foldMap(f)

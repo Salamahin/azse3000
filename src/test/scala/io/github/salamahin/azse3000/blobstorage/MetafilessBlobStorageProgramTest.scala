@@ -1,12 +1,17 @@
 package io.github.salamahin.azse3000.blobstorage
+import java.util.concurrent.atomic.AtomicInteger
+
 import io.github.salamahin.azse3000.ParallelInterpreter
+import io.github.salamahin.azse3000.ParallelInterpreter._
 import io.github.salamahin.azse3000.shared._
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
 import zio._
 
-case class InMemoryBlob(name: String) extends Blob {
-  override def isCopied: Either[AzureFailure, Boolean] = Right(true)
+case class InMemoryBlob(name: String, private val checksUntilCopied: Int = 1) extends Blob {
+  private val checksRemained = new AtomicInteger(checksUntilCopied)
+
+  override def isCopied: Either[AzureFailure, Boolean] = Right(checksRemained.updateAndGet(_ - 1) == 0)
   override def toString: String                        = name
 }
 
@@ -21,7 +26,7 @@ class MetafilessBlobStorageProgramTest extends AnyFunSuite with Matchers with Lo
     Secret("sas")
   )
 
-  test("Listing of the next page is in parallel with blobs processing") {
+  test("listing of the next page is in parallel with blobs processing") {
     val blobsOnPages = List(
       InMemoryBlob("a") :: InMemoryBlob("b") :: Nil,
       InMemoryBlob("c") :: Nil
@@ -31,13 +36,13 @@ class MetafilessBlobStorageProgramTest extends AnyFunSuite with Matchers with Lo
       blobs <- Ref.make[List[List[Blob]]](blobsOnPages)
       log   <- Ref.make[List[String]](Nil)
 
-      blobOpsInterpreter    = new TestBlobStorageOpsInterpreter(blobs, log)
+      blobOpsInterpreter    = new TestBlobStorageOpsInterpreter(log).withPages(blobs)
       testActionInterpreter = new TestActionInterpreter(log)
 
       _ <- new MetafilessBlobStorageProgram[TestAction]
         .listAndProcessBlobs(path)(LogBlobOperation(_).rightc)
         .value
-        .foldMap(ParallelInterpreter(blobOpsInterpreter or testActionInterpreter)(ParallelInterpreter.zioApplicative))
+        .foldMap(ParallelInterpreter(blobOpsInterpreter or testActionInterpreter)(zioApplicative))
 
       logged <- log.get
     } yield logged
@@ -51,12 +56,12 @@ class MetafilessBlobStorageProgramTest extends AnyFunSuite with Matchers with Lo
       inAnyOrder(
         "Operation on blob b start",
         "Operation on blob a start",
-        "List next batch in container@tst:/prefix start",
+        "List next batch in container@tst:/prefix start"
       ),
       inAnyOrder(
         "Next batch in container@tst:/prefix listed",
         "Operation on blob a end",
-        "Operation on blob b end",
+        "Operation on blob b end"
       ),
       inOrder(
         "Operation on blob c start",
@@ -65,4 +70,40 @@ class MetafilessBlobStorageProgramTest extends AnyFunSuite with Matchers with Lo
     )
   }
 
+  test("download blob attributes in parallel with small delay until all blobs copied") {
+    val blobsOnPages = Vector(InMemoryBlob("a", 1), InMemoryBlob("b", 2), InMemoryBlob("c", 3))
+
+    val program = for {
+      log   <- Ref.make[List[String]](Nil)
+
+      blobOpsInterpreter    = new TestBlobStorageOpsInterpreter(log)
+      testActionInterpreter = new TestActionInterpreter(log)
+
+      _ <- new MetafilessBlobStorageProgram[TestAction]
+        .waitUntilBlobsCopied(blobsOnPages)
+        .foldMap(ParallelInterpreter(blobOpsInterpreter or testActionInterpreter)(zioApplicative))
+
+      logged <- log.get
+    } yield logged
+
+    val log = new DefaultRuntime {}.unsafeRun(program)
+    log should containMessages(
+      inAnyOrder(
+        "Downloading attributes of a blob a",
+        "Downloading attributes of a blob b",
+        "Downloading attributes of a blob c"
+      ),
+      inOrder(
+        "Waiting a bit for another blob status check attempt"
+      ),
+      inAnyOrder(
+        "Downloading attributes of a blob b",
+        "Downloading attributes of a blob c"
+      ),
+      inOrder(
+        "Waiting a bit for another blob status check attempt",
+        "Downloading attributes of a blob c"
+      )
+    )
+  }
 }

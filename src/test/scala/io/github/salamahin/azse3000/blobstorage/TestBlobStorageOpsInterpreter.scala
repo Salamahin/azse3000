@@ -2,15 +2,22 @@ package io.github.salamahin.azse3000.blobstorage
 import cats.~>
 import io.github.salamahin.azse3000.shared.AzureFailure
 import zio.clock.Clock
-import zio.{Ref, UIO, URIO, ZIO}
+import zio.{Ref, URIO, ZIO}
 
-class TestBlobStorageOpsInterpreter(pages: Ref[List[List[Blob]]], log: Ref[List[String]]) extends (BlobStorageOps ~> URIO[Clock, *]) {
+class TestBlobStorageOpsInterpreter(log: Ref[List[String]]) extends (BlobStorageOps ~> URIO[Clock, *]) {
   import zio.duration._
+
+  private var _pages: Ref[List[List[Blob]]] = _
+
+  def withPages(pages: Ref[List[List[Blob]]]) = {
+    _pages = pages
+    this
+  }
 
   private def nextPage =
     for {
-      remainedPages <- pages.get
-      _             <- pages.set(remainedPages.tail)
+      remainedPages <- _pages.get
+      _             <- _pages.set(remainedPages.tail)
     } yield new BlobsPage2 {
       override def blobs: Seq[Blob] = remainedPages.head
       override def hasNext: Boolean = remainedPages.size > 1
@@ -26,7 +33,15 @@ class TestBlobStorageOpsInterpreter(pages: Ref[List[List[Blob]]], log: Ref[List[
           _    <- log.update(_ :+ s"Next batch in $inPath listed")
         } yield Right[AzureFailure, BlobsPage2](page)
 
-      case DownloadAttributes(blob) => ???
-      case WaitForCopyStateUpdate() => ???
+      case DownloadAttributes(blob) =>
+        for {
+          _ <- log.update(_ :+ s"Downloading attributes of a blob $blob")
+        } yield Right[AzureFailure, Blob](blob)
+
+      case WaitForCopyStateUpdate() =>
+        for {
+          _ <- log.update(_ :+ "Waiting a bit for another blob status check attempt")
+          _ <- ZIO.sleep(200 millis)
+        } yield ()
     }
 }

@@ -1,6 +1,6 @@
 package io.github.salamahin.azse3000.blobstorage
 import cats.data.{EitherK, EitherT}
-import cats.{InjectK, Monad, Monoid}
+import cats.{InjectK, Monad}
 import io.github.salamahin.azse3000.blobstorage.MetafilessBlobStorageProgram._
 import io.github.salamahin.azse3000.shared.{AzureFailure, Path}
 
@@ -35,11 +35,6 @@ final case class CopyResult(copied: Vector[Blob], errors: Vector[AzureFailure])
 
 object MetafilessBlobStorageProgram {
   final case class InnerCopyResult(copied: Vector[Blob], pending: Vector[Blob], errors: Vector[AzureFailure])
-
-  implicit val copyResultMonoid = new Monoid[InnerCopyResult] {
-    override def empty                                           = InnerCopyResult(Vector.empty, Vector.empty, Vector.empty)
-    override def combine(x: InnerCopyResult, y: InnerCopyResult) = InnerCopyResult(x.copied ++ y.copied, x.pending ++ y.pending, x.errors ++ y.errors)
-  }
 }
 
 class MetafilessBlobStorageProgram[F[_]](implicit m: BlobStorage[EitherK[BlobStorageOps, F, *]]) {
@@ -103,31 +98,32 @@ class MetafilessBlobStorageProgram[F[_]](implicit m: BlobStorage[EitherK[BlobSto
           }
       }
 
-    def checkBlobsCopyState(of: Vector[Blob]) =
+    def checkBlobsCopyState(of: Vector[Blob], acc: InnerCopyResult) =
       of
         .traverse(x => downloadAttributes(x).liftFA)
         .map { blobs =>
           val (downloadAttributesFailed, checked) = blobs.separate
           val (copied, pending, copyFailed)       = separateBlobToCopiedPendingAndFailed(checked, Vector.empty, Vector.empty, Vector.empty)
 
-          InnerCopyResult(copied, pending, downloadAttributesFailed ++ copyFailed)
+          acc.copy(
+            copied = acc.copied ++ copied,
+            pending = pending,
+            errors = acc.errors ++ downloadAttributesFailed ++ copyFailed
+          )
         }
 
     Monad[PRG[Algebra, *]]
-      .tailRecM((blobs, Vector.empty[InnerCopyResult])) {
-        case (toCheck, acc) =>
-          val checkResult = checkBlobsCopyState(toCheck).liftFree
+      .tailRecM((blobs, InnerCopyResult(Vector.empty, Vector.empty, Vector.empty))) {
+        case (toCheck, previousCopyResult) =>
+          checkBlobsCopyState(toCheck, previousCopyResult).liftFree
+            .flatMap { checkResult =>
+              val isPendingEmpty    = checkResult.pending.isEmpty
+              val returnAccumulated = checkResult.asRight[(Vector[Blob], InnerCopyResult)].pureMonad[PRG[Algebra, *]]
+              val nextIter          = (checkResult.pending, checkResult).asLeft[InnerCopyResult].pureMonad[PRG[Algebra, *]]
 
-          val isPendingEmpty    = checkResult.map(_.pending.isEmpty)
-          val returnAccumulated = checkResult.map(x => (acc :+ x).asRight[(Vector[Blob], Vector[InnerCopyResult])])
-          val nextIter          = checkResult.map(x => (x.pending, acc :+ x).asLeft[Vector[InnerCopyResult]])
-
-          Monad[PRG[Algebra, *]].ifM(isPendingEmpty)(
-            returnAccumulated,
-            waitForCopyStateUpdate().liftFA.liftFree *> nextIter
-          )
+              if (isPendingEmpty) returnAccumulated else waitForCopyStateUpdate().liftFA.liftFree *> nextIter
+            }
       }
-      .map { Monoid[InnerCopyResult].combineAll }
       .map(icr => CopyResult(icr.copied, icr.errors))
   }
 }

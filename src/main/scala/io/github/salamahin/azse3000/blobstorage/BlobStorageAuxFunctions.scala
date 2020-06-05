@@ -1,32 +1,24 @@
 package io.github.salamahin.azse3000.blobstorage
 import cats.Monad
 import cats.data.{EitherK, EitherT}
-import io.github.salamahin.azse3000.blobstorage.BlobStorageProgram._
+import io.github.salamahin.azse3000.blobstorage.BlobStorageAuxFunctions._
 import io.github.salamahin.azse3000.shared.{AzureFailure, Path}
 
 import scala.annotation.tailrec
 
-private object BlobStorageProgram {
+private object BlobStorageAuxFunctions {
   final case class InnerCopyResult[B](copied: Vector[B], pending: Vector[B], errors: Vector[AzureFailure])
 }
 
-trait Page[P, B] {
-  def blobs(page: P): Vector[B]
-  def hasNext(page: P): Boolean
-}
-
-trait Blob[B] {
-  def isCopied(blob: B): Either[AzureFailure, Boolean]
-}
-
-class BlobStorageProgram[F[_], P, B](implicit
-  m: BlobStorage[EitherK[BlobStorageOps[*, P, B], F, *], P, B],
+class BlobStorageAuxFunctions[F[_], P, B](implicit
+  m: BlobStorageAux[EitherK[BlobStorageAuxOps[*, P, B], F, *], P, B],
   p: Page[P, B],
   b: Blob[B]
 ) {
-  type Algebra[T]     = EitherK[BlobStorageOps[*, P, B], F, T]
+  type Algebra[T]     = EitherK[BlobStorageAuxOps[*, P, B], F, T]
   type MAPPED_BLOB[T] = (B, T)
 
+  import b._
   import cats.instances.either._
   import cats.instances.vector._
   import cats.syntax.alternative._
@@ -36,7 +28,6 @@ class BlobStorageProgram[F[_], P, B](implicit
   import io.github.salamahin.azse3000.shared.Program._
   import m._
   import p._
-  import b._
 
   def listAndProcessBlobs[T](from: Path)(f: B => Algebra[T]) = {
     def mapBlobs(thatPage: P, acc: Vector[MAPPED_BLOB[T]]) =

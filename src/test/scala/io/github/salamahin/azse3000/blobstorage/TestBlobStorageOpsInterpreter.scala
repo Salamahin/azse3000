@@ -4,26 +4,23 @@ import io.github.salamahin.azse3000.shared.AzureFailure
 import zio.clock.Clock
 import zio.{Ref, URIO, ZIO}
 
-class TestBlobStorageOpsInterpreter(log: Ref[List[String]]) extends (BlobStorageOps ~> URIO[Clock, *]) {
+class TestBlobStorageOpsInterpreter(log: Ref[List[String]]) extends (BlobStorageOps[*, FakeBlobPage, FakeBlob] ~> URIO[Clock, *]) {
   import zio.duration._
 
-  private var _pages: Ref[List[List[Blob]]] = _
+  private var _pages: Ref[Option[FakeBlobPage]] = _
 
-  def withPages(pages: Ref[List[List[Blob]]]) = {
+  def withPages(pages: Ref[Option[FakeBlobPage]]) = {
     _pages = pages
     this
   }
 
   private def nextPage =
     for {
-      remainedPages <- _pages.get
-      _             <- _pages.set(remainedPages.tail)
-    } yield new BlobsPage {
-      override def blobs: Seq[Blob] = remainedPages.head
-      override def hasNext: Boolean = remainedPages.size > 1
-    }
+      page <- _pages.get
+      _    <- _pages.update(_ => page.flatMap(_.next))
+    } yield page
 
-  override def apply[A](fa: BlobStorageOps[A]): URIO[Clock, A] =
+  override def apply[A](fa: BlobStorageOps[A, FakeBlobPage, FakeBlob]): URIO[Clock, A] =
     fa match {
       case ListPage(inPath, _) =>
         for {
@@ -31,12 +28,12 @@ class TestBlobStorageOpsInterpreter(log: Ref[List[String]]) extends (BlobStorage
           _    <- ZIO.sleep(200 millis)
           page <- nextPage
           _    <- log.update(_ :+ s"Next batch in $inPath listed")
-        } yield Right[AzureFailure, BlobsPage](page)
+        } yield Right[AzureFailure, FakeBlobPage](page.get)
 
       case DownloadAttributes(blob) =>
         for {
           _ <- log.update(_ :+ s"Downloading attributes of a blob $blob")
-        } yield Right[AzureFailure, Blob](blob)
+        } yield Right[AzureFailure, FakeBlob](blob)
 
       case WaitForCopyStateUpdate() =>
         for {
@@ -45,5 +42,6 @@ class TestBlobStorageOpsInterpreter(log: Ref[List[String]]) extends (BlobStorage
         } yield ()
 
       case StartCopying(src, dst) => ???
+      case Remove(blob)           => ???
     }
 }

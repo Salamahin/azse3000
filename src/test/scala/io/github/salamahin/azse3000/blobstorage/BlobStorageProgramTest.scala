@@ -8,14 +8,31 @@ import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
 import zio._
 
-case class InMemoryBlob(name: String, private val checksUntilCopied: Int = 1) extends Blob {
+final case class FakeBlob(name: String, private val checksUntilCopied: Int = 1) {
   private val checksRemained = new AtomicInteger(checksUntilCopied)
 
-  override def isCopied: Either[AzureFailure, Boolean] = Right(checksRemained.updateAndGet(_ - 1) == 0)
-  override def toString: String                        = name
+  def isCopied: Either[AzureFailure, Boolean] = Right(checksRemained.updateAndGet(_ - 1) == 0)
+  override def toString: String               = name
+}
+
+object FakeBlob {
+  implicit val blob = new Blob[FakeBlob] {
+    override def isCopied(blob: FakeBlob): Either[AzureFailure, Boolean] = blob.isCopied
+  }
+}
+
+final case class FakeBlobPage(blobs: Vector[FakeBlob], next: Option[FakeBlobPage])
+
+object FakeBlobPage {
+  implicit val page = new Page[FakeBlobPage, FakeBlob] {
+    override def blobs(page: FakeBlobPage): Vector[FakeBlob] = page.blobs
+    override def hasNext(page: FakeBlobPage): Boolean        = page.next.nonEmpty
+  }
 }
 
 class BlobStorageProgramTest extends AnyFunSuite with Matchers with LogMatchers {
+  import FakeBlob._
+  import FakeBlobPage._
   import cats.syntax.eitherK._
   import zio.interop.catz._
 
@@ -27,19 +44,21 @@ class BlobStorageProgramTest extends AnyFunSuite with Matchers with LogMatchers 
   )
 
   test("listing of the next page is in parallel with blobs processing") {
-    val blobsOnPages = List(
-      InMemoryBlob("a") :: InMemoryBlob("b") :: Nil,
-      InMemoryBlob("c") :: Nil
+    val blobsOnPages = FakeBlobPage(
+      Vector(FakeBlob("a"), FakeBlob("b")),
+      Some(
+        FakeBlobPage(Vector(FakeBlob("c")), None)
+      )
     )
 
     val program = for {
-      blobs <- Ref.make[List[List[Blob]]](blobsOnPages)
+      blobs <- Ref.make(Some(blobsOnPages): Option[FakeBlobPage])
       log   <- Ref.make[List[String]](Nil)
 
       blobOpsInterpreter    = new TestBlobStorageOpsInterpreter(log).withPages(blobs)
       testActionInterpreter = new TestActionInterpreter(log)
 
-      _ <- new BlobStorageProgram[TestAction]
+      _ <- new BlobStorageProgram[TestAction, FakeBlobPage, FakeBlob]
         .listAndProcessBlobs(path)(LogBlobOperation(_).rightc)
         .value
         .foldMap(ParallelInterpreter(blobOpsInterpreter or testActionInterpreter)(zioApplicative))
@@ -71,7 +90,7 @@ class BlobStorageProgramTest extends AnyFunSuite with Matchers with LogMatchers 
   }
 
   test("download blob attributes in parallel with small delay until all blobs copied") {
-    val blobsOnPages = Vector(InMemoryBlob("a", 1), InMemoryBlob("b", 2), InMemoryBlob("c", 3))
+    val blobsOnPages = Vector(FakeBlob("a", 1), FakeBlob("b", 2), FakeBlob("c", 3))
 
     val program = for {
       log <- Ref.make[List[String]](Nil)
@@ -79,7 +98,7 @@ class BlobStorageProgramTest extends AnyFunSuite with Matchers with LogMatchers 
       blobOpsInterpreter    = new TestBlobStorageOpsInterpreter(log)
       testActionInterpreter = new TestActionInterpreter(log)
 
-      _ <- new BlobStorageProgram[TestAction]
+      _ <- new BlobStorageProgram[TestAction, FakeBlobPage, FakeBlob]
         .waitUntilBlobsCopied(blobsOnPages)
         .foldMap(ParallelInterpreter(blobOpsInterpreter or testActionInterpreter)(zioApplicative))
 

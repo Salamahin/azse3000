@@ -4,7 +4,7 @@ import zio.clock.Clock
 import zio.{Ref, URIO, ZIO}
 
 sealed trait TestAction[T]
-final case class LogBlobOperation(blob: Blob) extends TestAction[Unit]
+final case class LogBlobOperation(blob: FakeBlob) extends TestAction[Unit]
 
 class TestActionInterpreter(log: Ref[List[String]]) extends (TestAction ~> URIO[Clock, *]) {
   import zio.duration._

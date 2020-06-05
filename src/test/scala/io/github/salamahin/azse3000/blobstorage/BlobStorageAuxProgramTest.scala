@@ -4,14 +4,14 @@ import java.util.concurrent.atomic.AtomicInteger
 import cats.~>
 import io.github.salamahin.azse3000.ParallelInterpreter
 import io.github.salamahin.azse3000.ParallelInterpreter._
-import io.github.salamahin.azse3000.blobstorage.BlobStorageAuxFunctionsTest._
+import io.github.salamahin.azse3000.blobstorage.BlobStorageAuxProgramTest._
 import io.github.salamahin.azse3000.shared._
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
 import zio._
 import zio.clock.Clock
 
-object BlobStorageAuxFunctionsTest {
+object BlobStorageAuxProgramTest {
   sealed trait TestAction[T]
   final case class LogBlobOperation(blob: FakeBlob) extends TestAction[Unit]
 
@@ -92,7 +92,7 @@ object BlobStorageAuxFunctionsTest {
   }
 }
 
-class BlobStorageAuxFunctionsTest extends AnyFunSuite with Matchers with LogMatchers {
+class BlobStorageAuxProgramTest extends AnyFunSuite with Matchers with LogMatchers {
   import FakeBlob._
   import FakeBlobPage._
   import cats.syntax.eitherK._
@@ -120,7 +120,7 @@ class BlobStorageAuxFunctionsTest extends AnyFunSuite with Matchers with LogMatc
       blobOpsInterpreter    = new BlobStorageAuxOpsInterpreter(log).withPages(blobs)
       testActionInterpreter = new TestActionInterpreter(log)
 
-      _ <- new BlobStorageAuxFunctions[TestAction, FakeBlobPage, FakeBlob]
+      _ <- new BlobStorageAuxProgram[TestAction, FakeBlobPage, FakeBlob]
         .listAndProcessBlobs(path)(LogBlobOperation(_).rightc)
         .value
         .foldMap(ParallelInterpreter(blobOpsInterpreter or testActionInterpreter)(zioApplicative))
@@ -160,7 +160,7 @@ class BlobStorageAuxFunctionsTest extends AnyFunSuite with Matchers with LogMatc
       blobOpsInterpreter    = new BlobStorageAuxOpsInterpreter(log)
       testActionInterpreter = new TestActionInterpreter(log)
 
-      _ <- new BlobStorageAuxFunctions[TestAction, FakeBlobPage, FakeBlob]
+      _ <- new BlobStorageAuxProgram[TestAction, FakeBlobPage, FakeBlob]
         .waitUntilBlobsCopied(blobsOnPages)
         .foldMap(ParallelInterpreter(blobOpsInterpreter or testActionInterpreter)(zioApplicative))
 

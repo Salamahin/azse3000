@@ -1,16 +1,16 @@
 package io.github.salamahin.azse3000.blobstorage
 import cats.Monad
 import cats.data.{EitherK, EitherT}
-import io.github.salamahin.azse3000.blobstorage.BlobStorageAuxFunctions._
+import io.github.salamahin.azse3000.blobstorage.BlobStorageAuxProgram._
 import io.github.salamahin.azse3000.shared.{AzureFailure, Path}
 
 import scala.annotation.tailrec
 
-private object BlobStorageAuxFunctions {
+private object BlobStorageAuxProgram {
   final case class InnerCopyResult[B](copied: Vector[B], pending: Vector[B], errors: Vector[AzureFailure])
 }
 
-class BlobStorageAuxFunctions[F[_], P, B](implicit
+class BlobStorageAuxProgram[F[_], P, B](implicit
   m: BlobStorageAux[EitherK[BlobStorageAuxOps[*, P, B], F, *], P, B],
   p: Page[P, B],
   b: Blob[B]

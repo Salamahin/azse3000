@@ -9,3 +9,5 @@ trait Page[P, B] {
 trait Blob[B] {
   def isCopied(blob: B): Either[AzureFailure, Boolean]
 }
+
+final case class CopyResult[B](copied: Vector[B], errors: Vector[AzureFailure])

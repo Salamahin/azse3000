@@ -1,6 +1,8 @@
 package io.github.salamahin.azse3000.blobstorage
 import cats.Monad
-import cats.data.{EitherK, EitherT}
+import cats.data.EitherT
+import cats.free.{Free, FreeApplicative}
+import cats.free.FreeApplicative.FA
 import io.github.salamahin.azse3000.blobstorage.BlobStorageAuxProgram._
 import io.github.salamahin.azse3000.shared.{AzureFailure, Path}
 
@@ -10,12 +12,12 @@ private object BlobStorageAuxProgram {
   final case class InnerCopyResult[B](copied: Vector[B], pending: Vector[B], errors: Vector[AzureFailure])
 }
 
-class BlobStorageAuxProgram[F[_], P, B](implicit
-  m: BlobStorageAux[EitherK[BlobStorageAuxOps[*, P, B], F, *], P, B],
+trait BlobStorageAuxProgram[F[_], P, B](implicit
+  m: BlobStorageAux[BlobStorageAuxOps[*, P, B], P, B],
   p: Page[P, B],
   b: Blob[B]
 ) {
-  type Algebra[T]     = EitherK[BlobStorageAuxOps[*, P, B], F, T]
+  type Algebra[T]     = BlobStorageAuxOps[T, P, B]
   type MAPPED_BLOB[T] = (B, T)
 
   import b._
@@ -35,14 +37,13 @@ class BlobStorageAuxProgram[F[_], P, B](implicit
         .traverse(src => f(src).liftFA.map(dst => (src, dst)))
         .map(x => acc ++ x)
 
-    def mapThatPageAndListNext(thatPage: P, acc: Vector[MAPPED_BLOB[T]]) = {
-      (listPage(from, Some(thatPage)).liftFA map2 mapBlobs(thatPage, acc)) {
+    def mapThatPageAndListNext(thatPage: P, acc: Vector[MAPPED_BLOB[T]]) =
+      (FreeApplicative.lift[Algebra, Either[AzureFailure, P]](listPage(from, Some(thatPage))) map2 mapBlobs(thatPage, acc)) {
         case (nextPage, mappedBlobs) => nextPage.map(page => (page, mappedBlobs))
       }
-    }
 
     for {
-      initPage <- listPage(from, None).liftFA.liftFree.toEitherT
+      initPage <- FreeApplicative.lift[Algebra, Either[AzureFailure, P]](listPage(from, None)).liftFree.toEitherT
       initAcc = Vector.empty[MAPPED_BLOB[T]]
 
       mapped <- Monad[EitherT[PRG[Algebra, *], AzureFailure, *]]
@@ -83,7 +84,7 @@ class BlobStorageAuxProgram[F[_], P, B](implicit
 
     def checkBlobsCopyState(of: Vector[B], acc: InnerCopyResult[B]) =
       of
-        .traverse(x => downloadAttributes(x).liftFA)
+        .traverse(x => FreeApplicative.lift[Algebra, Either[AzureFailure, B]](downloadAttributes(x)))
         .map { blobs =>
           val (downloadAttributesFailed, checked) = blobs.separate
           val (copied, pending, copyFailed)       = separateBlobToCopiedPendingAndFailed(checked, Vector.empty, Vector.empty, Vector.empty)
@@ -98,14 +99,14 @@ class BlobStorageAuxProgram[F[_], P, B](implicit
     Monad[PRG[Algebra, *]]
       .tailRecM((blobs, InnerCopyResult[B](Vector.empty, Vector.empty, Vector.empty))) {
         case (toCheck, previousCopyResult) =>
-          checkBlobsCopyState(toCheck, previousCopyResult)
-            .liftFree
+          Free.liftF[FA[Algebra, *], InnerCopyResult[B]](checkBlobsCopyState(toCheck, previousCopyResult))
             .flatMap { checkResult =>
               val isPendingEmpty    = checkResult.pending.isEmpty
               val returnAccumulated = checkResult.asRight[(Vector[B], InnerCopyResult[B])].pureMonad[PRG[Algebra, *]]
               val nextIter          = (checkResult.pending, checkResult).asLeft[InnerCopyResult[B]].pureMonad[PRG[Algebra, *]]
 
-              if (isPendingEmpty) returnAccumulated else waitForCopyStateUpdate().liftFA.liftFree *> nextIter
+              if (isPendingEmpty) returnAccumulated
+              else Free.liftF(FreeApplicative.lift[Algebra, Unit](waitForCopyStateUpdate())) *> nextIter
             }
       }
       .map(icr => CopyResult(icr.copied, icr.errors))

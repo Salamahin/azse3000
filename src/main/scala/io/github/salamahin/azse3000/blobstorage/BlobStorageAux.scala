@@ -14,5 +14,5 @@ final class BlobStorageAux[F[_], P, B]()(implicit inj: InjectK[BlobStorageAuxOps
 }
 
 object BlobStorageAux {
-  implicit def metafiless[F[_], P, B](implicit inj: InjectK[BlobStorageAuxOps[*, P, B], F]): BlobStorageAux[F, P, B] = new BlobStorageAux[F, P, B]
+  implicit def blobStorageAux[F[_], P, B](implicit inj: InjectK[BlobStorageAuxOps[*, P, B], F]): BlobStorageAux[F, P, B] = new BlobStorageAux[F, P, B]
 }

@@ -1,9 +1,6 @@
 package io.github.salamahin.azse3000.blobstorage
 import java.util.concurrent.atomic.AtomicInteger
 
-import cats.~>
-import io.github.salamahin.azse3000.ParallelInterpreter
-import io.github.salamahin.azse3000.ParallelInterpreter._
 import io.github.salamahin.azse3000.blobstorage.BlobStorageAuxProgramTest._
 import io.github.salamahin.azse3000.shared._
 import org.scalatest.funsuite.AnyFunSuite
@@ -12,8 +9,7 @@ import zio._
 import zio.clock.Clock
 
 object BlobStorageAuxProgramTest {
-  sealed trait TestAction[T]
-  final case class LogBlobOperation(blob: FakeBlob) extends TestAction[Unit]
+  import zio.duration._
 
   final case class FakeBlobPage(blobs: Vector[FakeBlob], next: Option[FakeBlobPage])
 
@@ -22,60 +18,6 @@ object BlobStorageAuxProgramTest {
       override def blobs(page: FakeBlobPage): Vector[FakeBlob] = page.blobs
       override def hasNext(page: FakeBlobPage): Boolean        = page.next.nonEmpty
     }
-  }
-
-
-  class TestActionInterpreter(log: Ref[List[String]]) extends (TestAction ~> URIO[Clock, *]) {
-    import zio.duration._
-
-    override def apply[A](fa: TestAction[A]): URIO[Clock, A] =
-      fa match {
-        case LogBlobOperation(blob) =>
-          for {
-            _ <- log.update(_ :+ s"Operation on blob $blob start")
-            _ <- ZIO.sleep(500 millis)
-            _ <- log.update(_ :+ s"Operation on blob $blob end")
-          } yield ()
-      }
-  }
-
-  class BlobStorageAuxOpsInterpreter(log: Ref[List[String]]) extends (BlobStorageAuxOps[*, FakeBlobPage, FakeBlob] ~> URIO[Clock, *]) {
-    import zio.duration._
-
-    private var _pages: Ref[Option[FakeBlobPage]] = _
-
-    def withPages(pages: Ref[Option[FakeBlobPage]]) = {
-      _pages = pages
-      this
-    }
-
-    private def nextPage =
-      for {
-        page <- _pages.get
-        _    <- _pages.update(_ => page.flatMap(_.next))
-      } yield page
-
-    override def apply[A](fa: BlobStorageAuxOps[A, FakeBlobPage, FakeBlob]): URIO[Clock, A] =
-      fa match {
-        case ListPage(inPath, _) =>
-          for {
-            _    <- log.update(_ :+ s"List next batch in $inPath start")
-            _    <- ZIO.sleep(200 millis)
-            page <- nextPage
-            _    <- log.update(_ :+ s"Next batch in $inPath listed")
-          } yield Right[AzureFailure, FakeBlobPage](page.get)
-
-        case DownloadAttributes(blob) =>
-          for {
-            _ <- log.update(_ :+ s"Downloading attributes of a blob $blob")
-          } yield Right[AzureFailure, FakeBlob](blob)
-
-        case WaitForCopyStateUpdate() =>
-          for {
-            _ <- log.update(_ :+ "Waiting a bit for another blob status check attempt")
-            _ <- ZIO.sleep(200 millis)
-          } yield ()
-      }
   }
 
   final case class FakeBlob(name: String, private val checksUntilCopied: Int = 1) {
@@ -90,13 +32,55 @@ object BlobStorageAuxProgramTest {
       override def isCopied(blob: FakeBlob): Either[AzureFailure, Boolean] = blob.isCopied
     }
   }
+
+  class LogActionInterpreter(log: Ref[List[String]]) {
+    def logBlobOperation(blob: FakeBlob) =
+      for {
+        _ <- log.update(_ :+ s"Operation on blob $blob start")
+        _ <- ZIO.sleep(500 millis)
+        _ <- log.update(_ :+ s"Operation on blob $blob end")
+      } yield ()
+  }
+
+  class BlobStorageAuxOpsInterpreter(log: Ref[List[String]]) extends BlobStorageAux[URIO[Clock, *], FakeBlobPage, FakeBlob] {
+    private var _pages: Ref[Option[FakeBlobPage]] = _
+
+    def withPages(pages: Ref[Option[FakeBlobPage]]) = {
+      _pages = pages
+      this
+    }
+
+    private def nextPage =
+      for {
+        page <- _pages.get
+        _    <- _pages.update(_ => page.flatMap(_.next))
+      } yield page
+
+    override def listPage(inPath: Path, prev: Option[FakeBlobPage]): URIO[Clock, Either[AzureFailure, FakeBlobPage]] =
+      for {
+        _    <- log.update(_ :+ s"List next batch in $inPath start")
+        _    <- ZIO.sleep(200 millis)
+        page <- nextPage
+        _    <- log.update(_ :+ s"Next batch in $inPath listed")
+      } yield Right[AzureFailure, FakeBlobPage](page.get)
+
+    override def downloadAttributes(blob: FakeBlob): URIO[Clock, Either[AzureFailure, FakeBlob]] =
+      for {
+        _ <- log.update(_ :+ s"Downloading attributes of a blob $blob")
+      } yield Right[AzureFailure, FakeBlob](blob)
+
+    override def waitForCopyStateUpdate(): URIO[Clock, Unit] =
+      for {
+        _ <- log.update(_ :+ "Waiting a bit for another blob status check attempt")
+        _ <- ZIO.sleep(200 millis)
+      } yield ()
+  }
 }
 
 class BlobStorageAuxProgramTest extends AnyFunSuite with Matchers with LogMatchers {
   import FakeBlob._
   import FakeBlobPage._
-  import cats.syntax.eitherK._
-  import zio.interop.catz._
+  import zio.interop.catz.core._
 
   private val path = Path(
     AccountInfo(StorageAccount("test"), EnvironmentAlias("tst")),
@@ -117,13 +101,12 @@ class BlobStorageAuxProgramTest extends AnyFunSuite with Matchers with LogMatche
       blobs <- Ref.make(Some(blobsOnPages): Option[FakeBlobPage])
       log   <- Ref.make[List[String]](Nil)
 
-      blobOpsInterpreter    = new BlobStorageAuxOpsInterpreter(log).withPages(blobs)
-      testActionInterpreter = new TestActionInterpreter(log)
+      auxInterpreter       = new BlobStorageAuxOpsInterpreter(log).withPages(blobs)
+      logActionInterpreter = new LogActionInterpreter(log)
 
-      _ <- new BlobStorageAuxProgram[TestAction, FakeBlobPage, FakeBlob]
-        .listAndProcessBlobs(path)(LogBlobOperation(_).rightc)
+      _ <- new BlobStorageAuxProgram[URIO[Clock, *], FakeBlobPage, FakeBlob](auxInterpreter)
+        .listAndProcessBlobs(path)(logActionInterpreter.logBlobOperation)
         .value
-        .foldMap(ParallelInterpreter(blobOpsInterpreter or testActionInterpreter)(zioApplicative))
 
       logged <- log.get
     } yield logged
@@ -157,12 +140,10 @@ class BlobStorageAuxProgramTest extends AnyFunSuite with Matchers with LogMatche
     val program = for {
       log <- Ref.make[List[String]](Nil)
 
-      blobOpsInterpreter    = new BlobStorageAuxOpsInterpreter(log)
-      testActionInterpreter = new TestActionInterpreter(log)
+      auxInterpreter = new BlobStorageAuxOpsInterpreter(log)
 
-      _ <- new BlobStorageAuxProgram[TestAction, FakeBlobPage, FakeBlob]
+      _ <- new BlobStorageAuxProgram[URIO[Clock, *], FakeBlobPage, FakeBlob](auxInterpreter)
         .waitUntilBlobsCopied(blobsOnPages)
-        .foldMap(ParallelInterpreter(blobOpsInterpreter or testActionInterpreter)(zioApplicative))
 
       logged <- log.get
     } yield logged

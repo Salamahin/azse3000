@@ -115,7 +115,8 @@ class FileSystemEngineTest extends FunSuite with Matchers with BeforeAndAfter {
     action = new FileSystemEngine[Id, ParsedPath, (Account, Container)](
       new IdEndpoint,
       parId,
-      fs
+      fs,
+      (ignored1, ignored2) => ()
     )
   }
 

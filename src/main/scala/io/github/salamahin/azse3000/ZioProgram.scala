@@ -1,16 +1,18 @@
 package io.github.salamahin.azse3000
 
 import java.time.Instant
+import java.util.concurrent.atomic.AtomicInteger
 
 import io.github.salamahin.azse3000.azure.{AzureEndpoints, AzureFlatListingFileSystem, AzureRecursiveListingFileSystem}
 import io.github.salamahin.azse3000.configurable.{Config, FlatLimited, Recursive}
-import io.github.salamahin.azse3000.program.{FileSystemEngine, UserInterface}
+import io.github.salamahin.azse3000.program.{FileSystemEngine, Progress, UserInterface}
 import io.github.salamahin.azse3000.shared._
 import io.github.salamahin.azse3000.shared.types.CREDS
 import io.github.salamahin.azse3000.syntax.ShellLikeSyntax
 import zio._
 
 class ZioProgram {
+
   import cats.syntax.either._
   import zio.console._
   import zio.duration._
@@ -19,7 +21,7 @@ class ZioProgram {
   private def prompt = new Prompt[RIO[Console, *]] {
     override def command: RIO[Console, Command] =
       for {
-        _     <- putStrLn("Enter command:")
+        _ <- putStrLn("Enter command:")
         input <- getStrLn
       } yield Command(input)
   }
@@ -34,7 +36,7 @@ class ZioProgram {
     override def toFullPath(inputPath: Path): RIO[Console, Either[MalformedPath, ParsedPath]] = UIO {
       inputPath match {
         case AzureEndpoints(pp) => pp.asRight
-        case _                  => MalformedPath(s"Unexpected path format: ${inputPath.path}").asLeft
+        case _ => MalformedPath(s"Unexpected path format: ${inputPath.path}").asLeft
       }
     }
   }
@@ -50,7 +52,7 @@ class ZioProgram {
         )
         .orElse {
           for {
-            _           <- putStrLn(s"Enter SAS for ${cont.name}@${acc.name}")
+            _ <- putStrLn(s"Enter SAS for ${cont.name}@${acc.name}")
             inputSecret <- getStrLn
           } yield inputSecret
         }
@@ -69,7 +71,7 @@ class ZioProgram {
   private def fs(conf: Config) = {
     conf.listingMode match {
       case FlatLimited(fetchMax) => new AzureFlatListingFileSystem[UIO](fetchMax, parallel(conf))
-      case Recursive             => new AzureRecursiveListingFileSystem[UIO](parallel(conf))
+      case Recursive => new AzureRecursiveListingFileSystem[UIO](parallel(conf))
     }
   }
 
@@ -86,8 +88,20 @@ class ZioProgram {
 
   private def ui(conf: Config) = new UserInterface[RIO[Console, *]](prompt, syntax(conf), parse, vault(conf))
 
+  private final val counter = new AtomicInteger()
+
+  private def consoleProgress = new Progress[UIO] {
+    override def show(current: Int, total: Int): UIO[Unit] = {
+      for {
+        c <- UIO { counter.incrementAndGet()}
+        _ <- putStr (s"$c of $total").provide(Console.Live)
+      } yield ()
+
+    }
+  }
+
   private def engine(creds: CREDS, conf: Config) =
-    new FileSystemEngine(endpoint(creds), parallel(conf), fs(conf))
+    new FileSystemEngine(endpoint(creds), parallel(conf), fs(conf), consoleProgress)
 
   private def progressBar[R, T, E](program: ZIO[R, T, E]) = {
     val showProgress = (for {
@@ -101,16 +115,16 @@ class ZioProgram {
 
     for {
       progress <- showProgress.fork
-      result   <- program
-      _        <- progress.interrupt
-      _        <- putStrLn("")
+      result <- program
+      _ <- progress.interrupt
+      _ <- putStrLn("")
     } yield result
   }
 
   private def measure[R, T, E](program: ZIO[R, T, E]) =
     for {
-      start    <- UIO.succeed(Instant.now)
-      result   <- program
+      start <- UIO.succeed(Instant.now)
+      result <- program
       duration = java.time.Duration.between(start, Instant.now)
     } yield (result, duration)
 
@@ -129,7 +143,7 @@ class ZioProgram {
     issues
       .map {
         case InvalidCommand(msg) => s"  * Failed to parse an expression: $msg"
-        case MalformedPath(msg)  => s"  * Format of path $msg is unexpected"
+        case MalformedPath(msg) => s"  * Format of path $msg is unexpected"
         case FileSystemFailure(msg, throwable) =>
           s"""  * Operations under path $msg failed because "${throwable.getMessage}""""
       }

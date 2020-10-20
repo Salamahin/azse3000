@@ -7,11 +7,16 @@ import io.github.salamahin.azse3000.shared._
 
 import scala.annotation.tailrec
 
-class FileSystemEngine[F[_]: Monad, B, K](
-  endpoint: Endpoint[F, B, K],
-  par: Parallel[F],
-  fs: FileSystem[F, B, K]
-) {
+trait Progress[F[_]] {
+  def show(current: Int, total: Int): F[Unit]
+}
+
+class FileSystemEngine[F[_] : Monad, B, K](
+                                            endpoint: Endpoint[F, B, K],
+                                            par: Parallel[F],
+                                            fs: FileSystem[F, B, K],
+                                            progress: Progress[F]
+                                          ) {
 
   import cats.instances.either._
   import cats.instances.vector._
@@ -23,28 +28,30 @@ class FileSystemEngine[F[_]: Monad, B, K](
   private def relativize(blob: B, from: ParsedPath, to: ParsedPath): F[ParsedPath] = {
     @tailrec
     def relativize(fullPaths: List[String], relativePaths: List[String]): List[String] =
-    (fullPaths, relativePaths) match {
-      case (remainedFull, Nil)                                      => remainedFull
-      case (lastName @ _ :: Nil, _ :: Nil)                          => lastName
-      case (bpHead :: bpTail, rpHead :: rpTail) if bpHead == rpHead => relativize(bpTail, rpTail)
-      case (_ :: bpTail, remainedRelative)                          => relativize(bpTail, remainedRelative)
-    }
+      (fullPaths, relativePaths) match {
+        case (remainedFull, Nil) => remainedFull
+        case (lastName@_ :: Nil, _ :: Nil) => lastName
+        case (bpHead :: bpTail, rpHead :: rpTail) if bpHead == rpHead => relativize(bpTail, rpTail)
+        case (_ :: bpTail, remainedRelative) => relativize(bpTail, remainedRelative)
+      }
 
     for {
-      blobPath            <- endpoint.blobPath(blob)
-      blobPathNames       = blobPath.path.split("/").toList
+      blobPath <- endpoint.blobPath(blob)
+      blobPathNames = blobPath.path.split("/").toList
       relativeToPathNames = from.prefix.path.split("/").toList
-      remainedPathNames   = relativize(blobPathNames, relativeToPathNames)
-      toPathNames         = to.prefix.path.split("/")
+      remainedPathNames = relativize(blobPathNames, relativeToPathNames)
+      toPathNames = to.prefix.path.split("/")
     } yield to.copy(prefix = Prefix((toPathNames ++ remainedPathNames).mkString("/")))
   }
 
   private def forEachBlobIn[U](path: ParsedPath)(action: B => F[Either[ActionFailed, U]]) =
     (for {
       container <- EitherT.right[Fatal with Aggregate](endpoint.toContainer(path))
-      actionResults <- EitherT(fs.foreachBlob(container, path.prefix) { par.traverse(_)(action) })
-                        .leftSemiflatMap(e => containerListingFailure(container, path.prefix, e))
-                        .leftWiden[Fatal with Aggregate]
+      actionResults <- EitherT(fs.foreachBlob(container, path.prefix) {
+        par.traverse(_)(action)
+      })
+        .leftSemiflatMap(e => containerListingFailure(container, path.prefix, e))
+        .leftWiden[Fatal with Aggregate]
 
       (failed, succeed) = actionResults.toVector.separate
     } yield EvaluationSummary(succeed.size, failed)).value
@@ -57,7 +64,7 @@ class FileSystemEngine[F[_]: Monad, B, K](
   private def copyFailure(from: B, to: B, cause: Throwable) =
     for {
       fromBlobPath <- endpoint.blobPath(from)
-      toBlobPath   <- endpoint.blobPath(to)
+      toBlobPath <- endpoint.blobPath(to)
     } yield ActionFailed(s"Failed to copy content of ${fromBlobPath.path} to ${toBlobPath.path}", cause)
 
   private def removeFailure(from: B, cause: Throwable) =
@@ -68,17 +75,17 @@ class FileSystemEngine[F[_]: Monad, B, K](
   private def copyBlobs(from: ParsedPath, to: ParsedPath) = forEachBlobIn(from) { fromBlob =>
     (for {
       toBlobPath <- EitherT.right[ActionFailed](relativize(fromBlob, from, to))
-      toBlob     <- EitherT.right[ActionFailed](endpoint.toBlob(toBlobPath))
-      _          <- EitherT(fs.copyContent(fromBlob, toBlob)).leftSemiflatMap(e => copyFailure(fromBlob, toBlob, e))
+      toBlob <- EitherT.right[ActionFailed](endpoint.toBlob(toBlobPath))
+      _ <- EitherT(fs.copyContent(fromBlob, toBlob)).leftSemiflatMap(e => copyFailure(fromBlob, toBlob, e))
     } yield ()).value
   }
 
   private def moveBlobs(from: ParsedPath, to: ParsedPath) = forEachBlobIn(from) { fromBlob =>
     (for {
       toBlobPath <- EitherT.right[ActionFailed](relativize(fromBlob, from, to))
-      toBlob     <- EitherT.right[ActionFailed](endpoint.toBlob(toBlobPath))
-      _          <- EitherT(fs.copyContent(fromBlob, toBlob)).leftSemiflatMap(e => copyFailure(fromBlob, toBlob, e))
-      _          <- EitherT(fs.remove(fromBlob)).leftSemiflatMap(e => removeFailure(fromBlob, e))
+      toBlob <- EitherT.right[ActionFailed](endpoint.toBlob(toBlobPath))
+      _ <- EitherT(fs.copyContent(fromBlob, toBlob)).leftSemiflatMap(e => copyFailure(fromBlob, toBlob, e))
+      _ <- EitherT(fs.remove(fromBlob)).leftSemiflatMap(e => removeFailure(fromBlob, e))
     } yield ()).value
   }
 
@@ -100,27 +107,28 @@ class FileSystemEngine[F[_]: Monad, B, K](
       override def run(term: Action[ParsedPath]) = term match {
 
         case Copy(fromPaths, to) =>
-          par.traverse(fromPaths) { from =>
+          par.traverse(fromPaths zipWithIndex) { case (from, idx) =>
             for {
-              ops      <- copyBlobs(from, to)
+              ops <- copyBlobs(from, to)
+              _ <- progress.show(idx, fromPaths.length)
               showFrom <- endpoint.showPath(from)
-              showTo   <- endpoint.showPath(to)
+              showTo <- endpoint.showPath(to)
             } yield OperationDescription(s"Copy from $showFrom to $showTo") -> ops
           }
 
         case Move(fromPaths, to) =>
           par.traverse(fromPaths) { from =>
             for {
-              ops      <- moveBlobs(from, to)
+              ops <- moveBlobs(from, to)
               showFrom <- endpoint.showPath(from)
-              showTo   <- endpoint.showPath(to)
+              showTo <- endpoint.showPath(to)
             } yield OperationDescription(s"Move from $showFrom to $showTo") -> ops
           }
 
         case Remove(fromPaths) =>
           par.traverse(fromPaths) { from =>
             for {
-              ops      <- removeBlobs(from)
+              ops <- removeBlobs(from)
               showFrom <- endpoint.showPath(from)
             } yield OperationDescription(s"Remove from $showFrom") -> ops
           }
@@ -128,7 +136,7 @@ class FileSystemEngine[F[_]: Monad, B, K](
         case Count(inPaths) =>
           par.traverse(inPaths) { in =>
             for {
-              ops    <- countBlobs(in)
+              ops <- countBlobs(in)
               showIn <- endpoint.showPath(in)
             } yield OperationDescription(s"Count blobs in $showIn") -> ops
           }
@@ -136,8 +144,8 @@ class FileSystemEngine[F[_]: Monad, B, K](
     }
 
   def evaluate(
-    expression: Expression[ParsedPath]
-  ): F[Either[AggregatedFatal, Map[OperationDescription, EvaluationSummary]]] =
+                expression: Expression[ParsedPath]
+              ): F[Either[AggregatedFatal, Map[OperationDescription, EvaluationSummary]]] =
     for {
       interpreted <- ActionInterpret.interpret(expression)(Monad[F], runFsAction)
       (failures, succeeds) = interpreted
